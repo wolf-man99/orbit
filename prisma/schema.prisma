@@ -1,0 +1,887 @@
+// Orbit — Personal Capital Operating System
+// Phase 3 — Database Schema
+//
+// Design notes that govern this file:
+//   • All money is stored as BigInt minor units (paise). Never Float/Decimal. (PRD M-01)
+//   • All rates are stored as integer basis points with an explicit period. (PRD M-03)
+//   • LedgerEvent and PaymentAllocation are APPEND-ONLY, enforced by database
+//     triggers in prisma/sql/001_immutability.sql — not by application code.
+//   • userId and portfolioId are denormalised onto every tenant-scoped table so
+//     RLS policies are single-predicate and index-backed. (PRD SEC-01)
+//   • Every derived value (LoanBalance, AccrualPeriod, PortfolioSnapshot) is
+//     recomputable from the ledger. No derived value is a source of truth. (PRD REL-05)
+//
+// Constraints Prisma cannot express live in prisma/sql/. Apply them after every
+// migration. See docs/03-database-schema.md §9.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [pgcrypto, pg_trgm, citext]
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+/// Every kind of thing that can happen to a Loan. Financial types post to the
+/// ledger via their delta columns; non-financial types are timeline entries only.
+enum LedgerEventType {
+  LOAN_DISBURSED
+  INTEREST_RECEIVED
+  PRINCIPAL_RECEIVED
+  PENALTY_CHARGED
+  PENALTY_WAIVED
+  ADJUSTMENT
+  REVERSAL
+  LOAN_CLOSED
+  LOAN_WRITTEN_OFF
+  LOAN_EXTENDED
+  LOAN_TERMS_AMENDED
+  NOTE_ADDED
+  DOCUMENT_UPLOADED
+  REMINDER_SENT
+
+  @@map("ledger_event_type")
+}
+
+/// How the origin of an event is known. Reserved for future bank/UPI ingestion.
+enum EventSource {
+  MANUAL
+  IMPORTED
+  INTEGRATION
+  SYSTEM
+
+  @@map("event_source")
+}
+
+/// Interest computation strategy. V1 implements FLAT and REDUCING_SIMPLE;
+/// the remainder are reserved so adding them is additive, not a migration.
+enum InterestConvention {
+  FLAT
+  REDUCING_SIMPLE
+  COMPOUND
+  AMORTIZED_EMI
+
+  @@map("interest_convention")
+}
+
+enum DayCountConvention {
+  ACTUAL_365
+  ACTUAL_ACTUAL
+  THIRTY_360
+
+  @@map("day_count_convention")
+}
+
+enum RatePeriod {
+  MONTHLY
+  ANNUAL
+
+  @@map("rate_period")
+}
+
+/// Derived from the ledger and the clock. Never set directly by a user.
+enum LoanStatus {
+  ACTIVE
+  DUE
+  OVERDUE
+  CLOSED
+  WRITTEN_OFF
+
+  @@map("loan_status")
+}
+
+/// Derived from the borrower's loans. Never set directly by a user.
+enum BorrowerStatus {
+  ACTIVE
+  DUE_SOON
+  OVERDUE
+  DORMANT
+  CLOSED
+  ARCHIVED
+
+  @@map("borrower_status")
+}
+
+enum RelationshipTag {
+  FAMILY
+  FRIEND
+  BUSINESS
+  REFERRAL
+  COMMUNITY
+  OTHER
+
+  @@map("relationship_tag")
+}
+
+enum AccrualPeriodStatus {
+  UPCOMING
+  DUE
+  OVERDUE
+  PARTIAL
+  SETTLED
+  WAIVED
+  CANCELLED
+
+  @@map("accrual_period_status")
+}
+
+enum ReminderType {
+  INTEREST_DUE
+  OVERDUE
+  LOAN_CLOSURE_DUE
+  CONCENTRATION_WARNING
+  CUSTOM
+
+  @@map("reminder_type")
+}
+
+enum ReminderStatus {
+  PENDING
+  SNOOZED
+  RESOLVED
+  DISMISSED
+  CANCELLED
+
+  @@map("reminder_status")
+}
+
+enum NotificationChannel {
+  IN_APP
+  PUSH
+  EMAIL
+
+  @@map("notification_channel")
+}
+
+enum DocumentType {
+  AGREEMENT
+  CHEQUE
+  ID_PROOF
+  RECEIPT
+  OTHER
+
+  @@map("document_type")
+}
+
+/// Reserved for future tax reporting (PRD §12). Classified at write time so no
+/// backfill is ever required.
+enum TaxCategory {
+  INTEREST_INCOME
+  PRINCIPAL_MOVEMENT
+  PENALTY_INCOME
+  WRITE_OFF
+  NON_TAXABLE
+
+  @@map("tax_category")
+}
+
+enum ThemePreference {
+  DARK
+  LIGHT
+  SYSTEM
+
+  @@map("theme_preference")
+}
+
+// ---------------------------------------------------------------------------
+// Identity & tenancy
+// ---------------------------------------------------------------------------
+
+/// Mirrors auth.users(id) from Supabase Auth. Row is created by the
+/// handle_new_user trigger in prisma/sql/004_auth_bridge.sql.
+model User {
+  id        String    @id @db.Uuid
+  email     String    @unique @db.Citext
+  fullName  String?   @map("full_name")
+  avatarUrl String?   @map("avatar_url")
+  locale    String    @default("en-IN")
+  timeZone  String    @default("Asia/Kolkata") @map("time_zone")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz(6)
+
+  settings      UserSettings?
+  portfolios    Portfolio[]
+  borrowers     Borrower[]
+  loans         Loan[]
+  ledgerEvents  LedgerEvent[]
+  reminders     Reminder[]
+  notifications Notification[]
+  documents     Document[]
+  pushSubs      PushSubscription[]
+
+  @@map("user")
+}
+
+/// A book of capital. V1 creates exactly one per user, implicitly. Present from
+/// day one so multi-portfolio is additive rather than a migration. (PRD §12)
+model Portfolio {
+  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  name   String @default("My Portfolio")
+
+  /// ISO-4217. Every amount in this portfolio is denominated here.
+  currency String @default("INR") @db.Char(3)
+
+  // Financial defaults inherited by new loans. Overridable per loan.
+  defaultConvention  InterestConvention @default(FLAT) @map("default_convention")
+  defaultDayCount    DayCountConvention @default(ACTUAL_365) @map("default_day_count")
+  defaultRatePeriod  RatePeriod         @default(MONTHLY) @map("default_rate_period")
+  defaultGraceDays   Int                @default(5) @map("default_grace_days")
+  /// When true, accrual cycles align to the loan's start day-of-month.
+  /// When false, they align to the calendar month. (PRD E-03)
+  anchorToStartDay   Boolean            @default(true) @map("anchor_to_start_day")
+  /// Single-borrower exposure share, in bps, above which a warning is raised.
+  concentrationWarnBps Int              @default(2500) @map("concentration_warn_bps")
+
+  isDefault Boolean  @default(true) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  borrowers Borrower[]
+  loans     Loan[]
+  events    LedgerEvent[]
+  periods   AccrualPeriod[]
+  reminders Reminder[]
+  documents Document[]
+  snapshots PortfolioSnapshot[]
+
+  @@index([userId])
+  @@map("portfolio")
+}
+
+model UserSettings {
+  userId String @id @map("user_id") @db.Uuid
+
+  theme            ThemePreference @default(DARK)
+  reducedMotion    Boolean         @default(false) @map("reduced_motion")
+  increasedContrast Boolean        @default(false) @map("increased_contrast")
+
+  // Security (PRD S-04)
+  appLockEnabled   Boolean @default(false) @map("app_lock_enabled")
+  appLockTimeoutSeconds Int @default(300) @map("app_lock_timeout_seconds")
+  biometricEnabled Boolean @default(false) @map("biometric_enabled")
+
+  // Notifications (PRD S-08, R-08)
+  pushEnabled      Boolean @default(false) @map("push_enabled")
+  digestEnabled    Boolean @default(false) @map("digest_enabled")
+  quietHoursStart  Int?    @map("quiet_hours_start") // minutes from local midnight
+  quietHoursEnd    Int?    @map("quiet_hours_end")
+  /// Per-ReminderType opt-outs, e.g. {"CONCENTRATION_WARNING": false}
+  notificationPrefs Json   @default("{}") @map("notification_prefs")
+
+  // Reminder generation (PRD R-03)
+  closureReminderLeadDays Int @default(7) @map("closure_reminder_lead_days")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Borrowers
+// ---------------------------------------------------------------------------
+
+model Borrower {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String @map("user_id") @db.Uuid
+  portfolioId String @map("portfolio_id") @db.Uuid
+
+  fullName    String  @map("full_name")
+  phone       String?
+  email       String? @db.Citext
+  photoUrl    String? @map("photo_url")
+  address     String?
+  /// Free-text reference only (e.g. "PAN on file"). Never a raw government ID.
+  idReference String? @map("id_reference")
+
+  relationshipTag RelationshipTag @default(OTHER) @map("relationship_tag")
+  relationshipSince DateTime?     @map("relationship_since") @db.Date
+  tags            String[]        @default([])
+
+  /// Derived from loans + clock by the status resolver. Cached for list queries.
+  status BorrowerStatus @default(ACTIVE)
+
+  /// Deterministic 0–100 composite (PRD BP-05). Factors stored for explainability;
+  /// no score is ever displayed without its breakdown.
+  riskScore     Int?  @map("risk_score")
+  riskFactors   Json? @map("risk_factors")
+  riskComputedAt DateTime? @map("risk_computed_at") @db.Timestamptz(6)
+  /// Version of the RiskModel that produced riskScore. (PRD §12)
+  riskModelVersion String? @map("risk_model_version")
+
+  /// Reserved: links a borrower to a future borrower-portal account. (PRD §12)
+  linkedUserId String? @map("linked_user_id") @db.Uuid
+
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// Borrowers with ledger history are archived, never deleted. (PRD B-10)
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  portfolio Portfolio     @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  loans     Loan[]
+  events    LedgerEvent[]
+  reminders Reminder[]
+  documents Document[]
+  notes     BorrowerNote[]
+
+  @@index([portfolioId, status])
+  @@index([portfolioId, archivedAt])
+  @@index([userId])
+  @@map("borrower")
+}
+
+/// Append-only. A new note supersedes an earlier one; both remain visible. (PRD BP-06)
+model BorrowerNote {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  borrowerId String   @map("borrower_id") @db.Uuid
+  body       String
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  borrower Borrower @relation(fields: [borrowerId], references: [id], onDelete: Cascade)
+
+  @@index([borrowerId, createdAt(sort: Desc)])
+  @@map("borrower_note")
+}
+
+// ---------------------------------------------------------------------------
+// Loans & effective-dated terms
+// ---------------------------------------------------------------------------
+
+model Loan {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String @map("user_id") @db.Uuid
+  portfolioId String @map("portfolio_id") @db.Uuid
+  borrowerId  String @map("borrower_id") @db.Uuid
+
+  /// Short human reference, unique per portfolio, e.g. "L-014".
+  reference String
+
+  startDate       DateTime  @map("start_date") @db.Date
+  /// Null means open-ended tenure — a first-class case. (PRD L-02)
+  expectedEndDate DateTime? @map("expected_end_date") @db.Date
+  closedOn        DateTime? @map("closed_on") @db.Date
+
+  currency String @default("INR") @db.Char(3)
+
+  /// Sum of all LOAN_DISBURSED events. Cache; ledger is truth. Multiple
+  /// disbursement tranches are supported. (Phase 1 Q2 → default: supported)
+  originalPrincipalMinor BigInt @default(0) @map("original_principal_minor")
+
+  status LoanStatus @default(ACTIVE)
+
+  purpose        String?
+  collateralNote String? @map("collateral_note")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  portfolio Portfolio       @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  borrower  Borrower        @relation(fields: [borrowerId], references: [id], onDelete: Restrict)
+  terms     LoanTerms[]
+  events    LedgerEvent[]
+  periods   AccrualPeriod[]
+  balance   LoanBalance?
+  reminders Reminder[]
+  documents Document[]
+
+  @@unique([portfolioId, reference])
+  @@index([borrowerId, status])
+  @@index([portfolioId, status])
+  @@index([userId])
+  @@map("loan")
+}
+
+/// Effective-dated loan terms. Amending a loan appends a new row; historical
+/// accruals are never recomputed. (PRD L-07, E-09)
+///
+/// Current terms = the row with the greatest effectiveFrom <= today.
+model LoanTerms {
+  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  loanId String @map("loan_id") @db.Uuid
+
+  /// Monotonic per loan. Version 1 is the terms the loan was created with.
+  version       Int
+  effectiveFrom DateTime @map("effective_from") @db.Date
+
+  rateBps    Int                @map("rate_bps")
+  ratePeriod RatePeriod         @map("rate_period")
+  convention InterestConvention
+  dayCount   DayCountConvention @map("day_count")
+  graceDays  Int                @map("grace_days")
+
+  /// Day-of-month the accrual cycle anchors to. Clamps in short months. (PRD E-04)
+  anchorDay Int @map("anchor_day")
+
+  /// The LOAN_TERMS_AMENDED event that introduced this version. Null for v1.
+  sourceEventId String? @unique @map("source_event_id") @db.Uuid
+  reason        String?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  loan        Loan         @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  sourceEvent LedgerEvent? @relation("TermsSourceEvent", fields: [sourceEventId], references: [id], onDelete: SetNull)
+
+  @@unique([loanId, version])
+  @@index([loanId, effectiveFrom])
+  @@map("loan_terms")
+}
+
+/// Transactionally-maintained cache of a loan's position. Fully recomputable
+/// from the ledger; lastEventSeq is the watermark used to detect staleness.
+/// (PRD REL-05, P-06)
+model LoanBalance {
+  loanId      String @id @map("loan_id") @db.Uuid
+  userId      String @map("user_id") @db.Uuid
+  portfolioId String @map("portfolio_id") @db.Uuid
+
+  outstandingPrincipalMinor BigInt @default(0) @map("outstanding_principal_minor")
+  principalReceivedMinor    BigInt @default(0) @map("principal_received_minor")
+  accruedInterestMinor      BigInt @default(0) @map("accrued_interest_minor")
+  interestReceivedMinor     BigInt @default(0) @map("interest_received_minor")
+  /// accruedInterestMinor - interestReceivedMinor, materialised for sorting.
+  interestOutstandingMinor  BigInt @default(0) @map("interest_outstanding_minor")
+  penaltyChargedMinor       BigInt @default(0) @map("penalty_charged_minor")
+  penaltyOutstandingMinor   BigInt @default(0) @map("penalty_outstanding_minor")
+  writtenOffMinor           BigInt @default(0) @map("written_off_minor")
+
+  overdueMinor   BigInt @default(0) @map("overdue_minor")
+  overduePeriods Int    @default(0) @map("overdue_periods")
+
+  nextDueOn    DateTime? @map("next_due_on") @db.Date
+  nextDueMinor BigInt?   @map("next_due_minor")
+
+  /// Highest LedgerEvent.seq incorporated into these figures.
+  lastEventSeq BigInt   @default(0) @map("last_event_seq")
+  recomputedAt DateTime @default(now()) @map("recomputed_at") @db.Timestamptz(6)
+
+  loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@index([portfolioId, nextDueOn])
+  @@index([portfolioId, interestOutstandingMinor(sort: Desc)])
+  @@map("loan_balance")
+}
+
+// ---------------------------------------------------------------------------
+// Cash ledger — APPEND ONLY
+// ---------------------------------------------------------------------------
+
+/// The single source of financial truth. Rows are never updated or deleted;
+/// triggers in prisma/sql/001_immutability.sql enforce this at the database.
+/// Corrections are made by appending a REVERSAL or an ADJUSTMENT. (PRD §6.4)
+///
+/// Posting model: `amountMinor` is the headline figure shown in the interface
+/// and is always >= 0. The four signed delta columns state the event's effect on
+/// each balance, so recomputing any balance is a pure sum over events.
+///
+/// A receipt split across interest and principal (PRD T-07) is recorded as two
+/// events sharing a `groupId` — one INTEREST_RECEIVED, one PRINCIPAL_RECEIVED.
+/// The interface presents them as a single entry. They stay separate rows
+/// because taxCategory differs between them and a single row could not carry
+/// both classifications.
+model LedgerEvent {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  /// Monotonic ordering key for cursor pagination and balance watermarks.
+  seq BigInt @unique @default(autoincrement())
+
+  userId      String  @map("user_id") @db.Uuid
+  portfolioId String  @map("portfolio_id") @db.Uuid
+  borrowerId  String? @map("borrower_id") @db.Uuid
+  loanId      String? @map("loan_id") @db.Uuid
+
+  type LedgerEventType
+
+  /// Shared by events written from one user action, e.g. a receipt split across
+  /// interest and principal. The interface groups on this. (PRD T-07)
+  groupId String? @map("group_id") @db.Uuid
+
+  /// When it happened in the world. Drives all accrual arithmetic.
+  occurredAt DateTime @map("occurred_at") @db.Timestamptz(6)
+  /// When it entered Orbit. Drives audit views only. (PRD §6.4)
+  recordedAt DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
+
+  currency    String @default("INR") @db.Char(3)
+  /// Headline magnitude, always >= 0. Zero for non-financial events.
+  amountMinor BigInt @default(0) @map("amount_minor")
+
+  // Signed postings. Positive increases the balance named.
+  principalDeltaMinor BigInt @default(0) @map("principal_delta_minor")
+  interestDeltaMinor  BigInt @default(0) @map("interest_delta_minor")
+  penaltyDeltaMinor   BigInt @default(0) @map("penalty_delta_minor")
+  /// Cash into (+) or out of (−) the lender's hands.
+  cashDeltaMinor      BigInt @default(0) @map("cash_delta_minor")
+
+  /// Mandatory for ADJUSTMENT, REVERSAL, PENALTY_WAIVED, LOAN_WRITTEN_OFF.
+  /// Enforced by check constraint. (PRD T-08)
+  reason String?
+  note   String?
+
+  /// One reversal per event, enforced by the unique constraint. Reversing a
+  /// reversal is blocked by check constraint. (PRD §6.4)
+  reversesEventId String? @unique @map("reverses_event_id") @db.Uuid
+
+  /// Client-generated; makes offline replay and network retries safe. (PRD REL-02, PWA-04)
+  idempotencyKey String @map("idempotency_key")
+
+  source      EventSource  @default(MANUAL)
+  /// Reserved for bank/UPI reconciliation. (PRD §12)
+  externalRef String?      @map("external_ref")
+  taxCategory TaxCategory? @map("tax_category")
+
+  createdBy String @map("created_by") @db.Uuid
+  metadata  Json   @default("{}")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  borrower  Borrower? @relation(fields: [borrowerId], references: [id], onDelete: Restrict)
+  loan      Loan?     @relation(fields: [loanId], references: [id], onDelete: Restrict)
+
+  reverses    LedgerEvent?  @relation("Reversal", fields: [reversesEventId], references: [id], onDelete: Restrict)
+  reversedBy  LedgerEvent?  @relation("Reversal")
+
+  allocations  PaymentAllocation[]
+  amendedTerms LoanTerms?          @relation("TermsSourceEvent")
+  documents    Document[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([portfolioId, occurredAt(sort: Desc), seq(sort: Desc)])
+  @@index([loanId, occurredAt(sort: Desc)])
+  @@index([borrowerId, occurredAt(sort: Desc)])
+  @@index([portfolioId, type, occurredAt(sort: Desc)])
+  @@index([groupId])
+  @@map("ledger_event")
+}
+
+// ---------------------------------------------------------------------------
+// Accrual ledger — computed
+// ---------------------------------------------------------------------------
+
+/// One billing cycle of interest on a loan. Generated by the interest engine,
+/// never entered by a user. Settlement attaches here, not to segments. (PRD §6.3)
+model AccrualPeriod {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String @map("user_id") @db.Uuid
+  portfolioId String @map("portfolio_id") @db.Uuid
+  loanId      String @map("loan_id") @db.Uuid
+
+  /// Monotonic cycle index within the loan, starting at 1.
+  cycleIndex Int @map("cycle_index")
+
+  periodStart DateTime @map("period_start") @db.Date
+  periodEnd   DateTime @map("period_end") @db.Date
+  dueOn       DateTime @map("due_on") @db.Date
+  /// dueOn + graceDays. Past this with an unsettled balance means OVERDUE. (PRD E-10)
+  graceUntil  DateTime @map("grace_until") @db.Date
+
+  /// Sum of segment accruals, rounded to the minor unit at cycle close.
+  accruedMinor BigInt @map("accrued_minor")
+  /// Sub-minor-unit remainder carried into the next cycle so totals never drift. (PRD M-05)
+  carryInMinor  BigInt @default(0) @map("carry_in_minor")
+  carryOutMinor BigInt @default(0) @map("carry_out_minor")
+
+  /// Cache of sum(allocations.amountMinor). Signed allocations mean a reversal
+  /// reduces this without any row being mutated.
+  settledMinor BigInt @default(0) @map("settled_minor")
+  waivedMinor  BigInt @default(0) @map("waived_minor")
+
+  status AccrualPeriodStatus @default(UPCOMING)
+
+  /// Stamped so historical figures stay explainable after the engine evolves. (PRD E-14)
+  engineVersion String   @map("engine_version")
+  computedAt    DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  portfolio   Portfolio           @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  loan        Loan                @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  segments    AccrualSegment[]
+  allocations PaymentAllocation[]
+  reminders   Reminder[]
+
+  @@unique([loanId, cycleIndex])
+  @@index([portfolioId, status, dueOn])
+  @@index([portfolioId, dueOn])
+  @@index([loanId, periodStart])
+  @@map("accrual_period")
+}
+
+/// A computation slice within a cycle. A mid-period principal repayment on a
+/// REDUCING_SIMPLE loan splits the cycle into segments, each accruing on its own
+/// base. Exposing segments is how the interface explains any figure. (PRD E-07, E-12)
+model AccrualSegment {
+  id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId   String @map("user_id") @db.Uuid
+  periodId String @map("period_id") @db.Uuid
+
+  segmentIndex Int      @map("segment_index")
+  segmentStart DateTime @map("segment_start") @db.Date
+  segmentEnd   DateTime @map("segment_end") @db.Date
+
+  /// The principal this segment accrued on.
+  basisPrincipalMinor BigInt             @map("basis_principal_minor")
+  rateBps             Int                @map("rate_bps")
+  ratePeriod          RatePeriod         @map("rate_period")
+  convention          InterestConvention
+  dayCount            DayCountConvention @map("day_count")
+
+  days       Int
+  daysInYear Int @map("days_in_year")
+
+  /// Unrounded accrual scaled by 10^6, so the engine can carry precision
+  /// between segments without ever using a float. (PRD M-04)
+  accruedMicroMinor BigInt @map("accrued_micro_minor")
+
+  /// The event that caused this segment boundary, when there was one.
+  triggerEventId String? @map("trigger_event_id") @db.Uuid
+
+  period AccrualPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+
+  @@unique([periodId, segmentIndex])
+  @@map("accrual_segment")
+}
+
+/// Links a cash receipt to the accrual cycles it settles. APPEND ONLY and
+/// signed: a REVERSAL appends negative allocations rather than deleting rows,
+/// which keeps the ledger's immutability guarantee intact. (PRD E-11)
+model PaymentAllocation {
+  id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId   String @map("user_id") @db.Uuid
+  eventId  String @map("event_id") @db.Uuid
+  periodId String @map("period_id") @db.Uuid
+
+  /// Signed. Positive settles, negative unwinds a reversed receipt.
+  amountMinor BigInt @map("amount_minor")
+
+  /// False when the user overrode the engine's oldest-first suggestion.
+  isAutomatic Boolean  @default(true) @map("is_automatic")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  event  LedgerEvent   @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  period AccrualPeriod @relation(fields: [periodId], references: [id], onDelete: Restrict)
+
+  @@index([periodId])
+  @@index([eventId])
+  @@map("payment_allocation")
+}
+
+// ---------------------------------------------------------------------------
+// Reminders & notifications
+// ---------------------------------------------------------------------------
+
+/// A dated intention. Generation is idempotent via dedupeKey. (PRD R-09)
+model Reminder {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String  @map("user_id") @db.Uuid
+  portfolioId String  @map("portfolio_id") @db.Uuid
+  borrowerId  String? @map("borrower_id") @db.Uuid
+  loanId      String? @map("loan_id") @db.Uuid
+  periodId    String? @map("period_id") @db.Uuid
+
+  type   ReminderType
+  status ReminderStatus @default(PENDING)
+
+  dueOn      DateTime  @map("due_on") @db.Date
+  snoozedTo  DateTime? @map("snoozed_to") @db.Date
+  resolvedAt DateTime? @map("resolved_at") @db.Timestamptz(6)
+  /// The receipt that auto-resolved this reminder, when one did. (PRD R-05)
+  resolvedByEventId String? @map("resolved_by_event_id") @db.Uuid
+
+  title String
+  body  String?
+  /// Route the notification opens, pre-scoped so acting takes one tap. (Phase 2 §12.2)
+  deepLink String? @map("deep_link")
+
+  /// Natural key for idempotent generation, e.g. "INTEREST_DUE:<loanId>:<cycle>".
+  dedupeKey String @map("dedupe_key")
+
+  isSystemGenerated Boolean  @default(true) @map("is_system_generated")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  portfolio     Portfolio      @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  borrower      Borrower?      @relation(fields: [borrowerId], references: [id], onDelete: Cascade)
+  loan          Loan?          @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  period        AccrualPeriod? @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  notifications Notification[]
+
+  @@unique([userId, dedupeKey])
+  @@index([portfolioId, status, dueOn])
+  @@index([borrowerId, status])
+  @@map("reminder")
+}
+
+/// A delivery of a reminder, or a system message. One reminder may produce
+/// several notifications across channels. (Phase 2 §12.1)
+model Notification {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String  @map("user_id") @db.Uuid
+  reminderId String? @map("reminder_id") @db.Uuid
+
+  channel NotificationChannel @default(IN_APP)
+  title   String
+  body    String?
+  deepLink String? @map("deep_link")
+  payload Json    @default("{}")
+
+  deliveredAt DateTime? @map("delivered_at") @db.Timestamptz(6)
+  readAt      DateTime? @map("read_at") @db.Timestamptz(6)
+  failedAt    DateTime? @map("failed_at") @db.Timestamptz(6)
+  failureReason String? @map("failure_reason")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reminder Reminder? @relation(fields: [reminderId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt(sort: Desc)])
+  @@map("notification")
+}
+
+/// Web Push endpoint (VAPID). One row per browser/device. (PRD R-07)
+model PushSubscription {
+  id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId   String @map("user_id") @db.Uuid
+  endpoint String @unique
+  p256dh   String
+  auth     String
+  userAgent String? @map("user_agent")
+
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@map("push_subscription")
+}
+
+// ---------------------------------------------------------------------------
+// Documents
+// ---------------------------------------------------------------------------
+
+model Document {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String  @map("user_id") @db.Uuid
+  portfolioId String  @map("portfolio_id") @db.Uuid
+  borrowerId  String? @map("borrower_id") @db.Uuid
+  loanId      String? @map("loan_id") @db.Uuid
+  /// The DOCUMENT_UPLOADED event that placed this on the timeline.
+  eventId     String? @map("event_id") @db.Uuid
+
+  type     DocumentType @default(OTHER)
+  fileName String       @map("file_name")
+  /// Path within the private storage bucket. Served only via signed URLs. (PRD SEC-04)
+  storagePath String    @unique @map("storage_path")
+  mimeType    String    @map("mime_type")
+  sizeBytes   Int       @map("size_bytes")
+  /// Content hash for duplicate detection.
+  sha256      String?
+
+  /// Reserved for future OCR extraction. (PRD §12)
+  extractedData Json? @map("extracted_data")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  portfolio Portfolio    @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  borrower  Borrower?    @relation(fields: [borrowerId], references: [id], onDelete: Cascade)
+  loan      Loan?        @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  event     LedgerEvent? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  @@index([borrowerId, createdAt(sort: Desc)])
+  @@index([loanId])
+  @@map("document")
+}
+
+// ---------------------------------------------------------------------------
+// Analytics roll-ups
+// ---------------------------------------------------------------------------
+
+/// Monthly materialised portfolio state. Analytics reads these rather than
+/// scanning the ledger. Fully recomputable. (PRD A-15, REL-05)
+model PortfolioSnapshot {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String @map("user_id") @db.Uuid
+  portfolioId String @map("portfolio_id") @db.Uuid
+
+  /// First day of the month this snapshot describes.
+  periodMonth DateTime @map("period_month") @db.Date
+
+  outstandingPrincipalMinor BigInt @map("outstanding_principal_minor")
+  accruedInterestMinor      BigInt @map("accrued_interest_minor")
+  interestReceivedMinor     BigInt @map("interest_received_minor")
+  principalReceivedMinor    BigInt @map("principal_received_minor")
+  disbursedMinor            BigInt @map("disbursed_minor")
+  penaltyReceivedMinor      BigInt @map("penalty_received_minor")
+  writtenOffMinor           BigInt @map("written_off_minor")
+  portfolioValueMinor       BigInt @map("portfolio_value_minor")
+
+  activeLoans     Int @map("active_loans")
+  activeBorrowers Int @map("active_borrowers")
+  overdueLoans    Int @map("overdue_loans")
+  overdueMinor    BigInt @map("overdue_minor")
+
+  interestDueMinor  BigInt @map("interest_due_minor")
+  collectionRateBps Int    @map("collection_rate_bps")
+  /// Principal-weighted, not an arithmetic mean. (PRD D-07)
+  avgRateBps        Int    @map("avg_rate_bps")
+  avgLoanSizeMinor  BigInt @map("avg_loan_size_minor")
+  /// Herfindahl index across borrower exposure, scaled to bps.
+  concentrationHhi  Int    @map("concentration_hhi")
+  /// Mean days between dueOn and settlement for cycles settled this month.
+  avgDaysToSettle   Int?   @map("avg_days_to_settle")
+
+  healthScore   Int  @map("health_score")
+  healthFactors Json @map("health_factors")
+
+  engineVersion String   @map("engine_version")
+  computedAt    DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@unique([portfolioId, periodMonth])
+  @@index([portfolioId, periodMonth(sort: Desc)])
+  @@map("portfolio_snapshot")
+}
+
+// ---------------------------------------------------------------------------
+// Operational
+// ---------------------------------------------------------------------------
+
+/// Records every engine run so a bad recomputation can be traced and replayed.
+model EngineRun {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String @map("user_id") @db.Uuid
+  portfolioId String @map("portfolio_id") @db.Uuid
+
+  /// "accrual" | "reminders" | "snapshot" | "risk"
+  kind          String
+  engineVersion String @map("engine_version")
+
+  startedAt  DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
+  succeeded  Boolean?
+  error      String?
+  stats      Json      @default("{}")
+
+  @@index([portfolioId, kind, startedAt(sort: Desc)])
+  @@map("engine_run")
+}

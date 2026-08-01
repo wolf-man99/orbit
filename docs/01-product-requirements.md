@@ -742,8 +742,8 @@ Architectural accommodations required in V1 so these are additive later, never a
 | Phase | Deliverable | Status |
 | --- | --- | --- |
 | 1 | Product Requirements Document | **This document** — approved |
-| 2 | Information Architecture | Delivered, awaiting approval |
-| 3 | Database Schema | — |
+| 2 | Information Architecture | Approved |
+| 3 | Database Schema | Delivered, awaiting approval |
 | 4 | System Architecture | — |
 | 5 | Folder Structure | — |
 | 6 | API Design | — |
