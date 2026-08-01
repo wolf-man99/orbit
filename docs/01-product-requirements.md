@@ -745,8 +745,8 @@ Architectural accommodations required in V1 so these are additive later, never a
 | 2 | Information Architecture | Approved |
 | 3 | Database Schema | Approved |
 | 4 | System Architecture | Approved |
-| 5 | Folder Structure | Delivered, awaiting approval |
-| 6 | API Design | — |
+| 5 | Folder Structure | Approved |
+| 6 | API Design | Delivered, awaiting approval |
 | 7 | Design System | — |
 | 8 | UI Components | — |
 | 9 | Complete UI Screens | — |

@@ -10,7 +10,7 @@ Orbit is built on an append-only ledger with a separate accrual engine, so it an
 
 In design. Deliverables are produced in approved phases — see [`docs/`](./docs/README.md).
 
-Current phase: **5 — Folder Structure** ([document](./docs/05-folder-structure.md))
+Current phase: **6 — API Design** ([document](./docs/06-api-design.md))
 
 ## Intended stack
 

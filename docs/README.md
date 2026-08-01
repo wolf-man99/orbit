@@ -8,8 +8,8 @@ Phase deliverables for the Orbit Personal Capital Operating System. Each phase i
 | 2 | Information Architecture | [02-information-architecture.md](./02-information-architecture.md) | Approved |
 | 3 | Database Schema | [03-database-schema.md](./03-database-schema.md) | Approved |
 | 4 | System Architecture | [04-system-architecture.md](./04-system-architecture.md) | Approved |
-| 5 | Folder Structure | [05-folder-structure.md](./05-folder-structure.md) | Awaiting approval |
-| 6 | API Design | — | — |
+| 5 | Folder Structure | [05-folder-structure.md](./05-folder-structure.md) | Approved |
+| 6 | API Design | [06-api-design.md](./06-api-design.md) | Awaiting approval |
 | 7 | Design System | — | — |
 | 8 | UI Components | — | — |
 | 9 | Complete UI Screens | — | — |
