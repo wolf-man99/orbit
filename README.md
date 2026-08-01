@@ -8,9 +8,14 @@ Orbit is built on an append-only ledger with a separate accrual engine, so it an
 
 ## Status
 
-In design. Deliverables are produced in approved phases — see [`docs/`](./docs/README.md).
+Phases 1–13 delivered. See [`docs/`](./docs/README.md); implementation notes and
+known gaps are in [Phases 9–13](./docs/09-13-implementation.md).
 
-Current phase: **8 — UI Components** ([document](./docs/08-ui-components.md))
+```
+pnpm verify     typecheck · lint · boundaries · contrast · 163 unit tests
+pnpm test:e2e   17 critical-path tests
+pnpm db:verify  27 ledger invariants against Postgres
+```
 
 ## Intended stack
 

@@ -60,6 +60,22 @@ jobs:
       - run: pnpm db:sql
       - run: pnpm db:verify
 
+  e2e:
+    name: E2E critical paths
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma generate
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm build
+      - run: pnpm test:e2e
+
   budget:
     name: Bundle budget
     runs-on: ubuntu-latest
