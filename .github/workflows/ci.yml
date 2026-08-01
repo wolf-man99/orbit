@@ -26,6 +26,8 @@ jobs:
       - run: pnpm lint
       # The architecture is a build gate, not a review convention. (Phase 4 §5.1)
       - run: pnpm boundaries
+      # Contrast is objectively checkable, so it is checked. (PRD ACC-02)
+      - run: pnpm check:contrast
       - run: pnpm test
 
   ledger-invariants:

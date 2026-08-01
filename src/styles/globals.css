@@ -1,0 +1,187 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+/**
+ * Tailwind v4 theme mapping.
+ *
+ * Every utility resolves to a SEMANTIC token. There is deliberately no
+ * `bg-zinc-900` available to components — only `bg-surface`. A component that
+ * could reach a primitive would hard-code an appearance and break light mode.
+ * (PRD DS-02, DS-03, ENG-06)
+ */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-sunken: var(--surface-sunken);
+
+  --color-primary: var(--text-primary);
+  --color-secondary: var(--text-secondary);
+  --color-muted: var(--text-muted);
+  --color-inverse: var(--text-inverse);
+
+  --color-border: var(--border);
+  --color-border-interactive: var(--border-interactive);
+  --color-border-strong: var(--border-strong);
+
+  --color-accent: var(--accent);
+  --color-accent-fill: var(--accent-fill);
+  --color-accent-on-fill: var(--accent-on-fill);
+  --color-accent-subtle: var(--accent-subtle);
+
+  --color-info: var(--info);
+  --color-info-fill: var(--info-fill);
+  --color-info-on-fill: var(--info-on-fill);
+  --color-info-subtle: var(--info-subtle);
+
+  --color-warning: var(--warning);
+  --color-warning-fill: var(--warning-fill);
+  --color-warning-on-fill: var(--warning-on-fill);
+  --color-warning-subtle: var(--warning-subtle);
+
+  --color-danger: var(--danger);
+  --color-danger-fill: var(--danger-fill);
+  --color-danger-on-fill: var(--danger-on-fill);
+  --color-danger-subtle: var(--danger-subtle);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-7: var(--chart-7);
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-axis: var(--chart-axis);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  --text-display: var(--text-display);
+  --text-title: var(--text-title);
+  --text-body: var(--text-body);
+  --text-label: var(--text-label);
+  --text-caption: var(--text-caption);
+
+  --radius-card: var(--radius-card);
+  --radius-button: var(--radius-button);
+  --radius-input: var(--radius-input);
+  --radius-sheet: var(--radius-sheet);
+  --radius-sm: var(--radius-sm);
+  --radius-pill: var(--radius-pill);
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+
+  --ease-out: var(--ease-out);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    /* Dynamic type up to 200% must not break layout. (PRD ACC-07) */
+    text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* The bottom bar and FAB sit above the home indicator. */
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Focus is never removed, only restyled. (PRD ACC-03) */
+  :focus-visible {
+    outline: var(--focus-ring-width) solid var(--focus-ring);
+    outline-offset: var(--focus-ring-offset);
+    border-radius: var(--radius-sm);
+  }
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  ::selection {
+    background: var(--accent-subtle);
+    color: var(--text-primary);
+  }
+
+  /* No spinners on number inputs — amounts are entered, not stepped. */
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+}
+
+@layer utilities {
+  /**
+   * Every monetary figure carries this. Without tabular figures a column of
+   * amounts cannot be scanned, because digit widths differ. (PRD M-07)
+   */
+  .tabular {
+    font-variant-numeric: var(--numeric-tabular);
+    font-feature-settings: 'tnum' 1, 'lnum' 1;
+  }
+
+  .text-display {
+    font-size: var(--text-display);
+    line-height: var(--leading-display);
+    letter-spacing: var(--tracking-display);
+    font-weight: var(--weight-semibold);
+  }
+  .text-title {
+    font-size: var(--text-title);
+    line-height: var(--leading-title);
+    letter-spacing: var(--tracking-title);
+    font-weight: var(--weight-semibold);
+  }
+  .text-label {
+    font-size: var(--text-label);
+    line-height: var(--leading-tight);
+    font-weight: var(--weight-medium);
+  }
+  .text-caption {
+    font-size: var(--text-caption);
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-caption);
+    font-weight: var(--weight-medium);
+  }
+
+  /* Minimum comfortable hit area. (PRD ACC-05) */
+  .touch-target {
+    min-height: var(--touch-target-min);
+    min-width: var(--touch-target-min);
+  }
+
+  .transition-base {
+    transition-duration: var(--duration-base);
+    transition-timing-function: var(--ease-out);
+  }
+}
+
+/**
+ * The global reduced-motion contract. (PRD UX-15, ACC-01)
+ *
+ * Declared once here rather than remembered at each animation, because an
+ * animation that forgets it is a vestibular trigger, not a style bug.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

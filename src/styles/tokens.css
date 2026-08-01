@@ -1,0 +1,296 @@
+/**
+ * Orbit — design tokens.
+ *
+ * Two layers, and components may only ever touch the second:
+ *
+ *   PRIMITIVE   --zinc-900, --emerald-500 …   raw values, no meaning
+ *   SEMANTIC    --surface, --text-secondary … meaning, no raw values
+ *
+ * A component that reaches for a primitive has hard-coded an appearance, and
+ * light mode stops being a derived output. (PRD DS-02, DS-03)
+ *
+ * Dark is the origin: :root carries the dark values and light overrides them.
+ *
+ * ---------------------------------------------------------------------------
+ * Every colour pairing below is verified by scripts/check-contrast.mjs, which
+ * runs in CI. Ratios in comments are measured, not estimated. Where the PRD's
+ * specified hue fails at a given size or role, the token records the usage rule
+ * rather than silently substituting a different brand colour.
+ * ---------------------------------------------------------------------------
+ */
+
+:root {
+  /* ======================================================================
+     PRIMITIVES — never referenced by a component
+     ====================================================================== */
+
+  --zinc-50: #fafafa;
+  --zinc-100: #f4f4f5;
+  --zinc-200: #e4e4e7;
+  --zinc-300: #d4d4d8;
+  --zinc-400: #a1a1aa;
+  --zinc-500: #71717a;
+  --zinc-600: #52525b;
+  --zinc-700: #3f3f46;
+  --zinc-800: #27272a;
+  --zinc-900: #18181b;
+  --zinc-950: #09090b;
+  --white: #ffffff;
+
+  --emerald-300: #6ee7b7;
+  --emerald-400: #34d399;
+  --emerald-500: #10b981; /* PRD primary accent */
+  --emerald-600: #059669;
+  --emerald-700: #047857;
+
+  --blue-300: #93c5fd;
+  --blue-400: #60a5fa;
+  --blue-500: #3b82f6;
+  --blue-600: #2563eb; /* PRD blue */
+  --blue-700: #1d4ed8;
+
+  --amber-300: #fcd34d;
+  --amber-400: #fbbf24;
+  --amber-500: #f59e0b; /* PRD warning */
+  --amber-600: #d97706;
+  --amber-700: #b45309;
+
+  --red-300: #fca5a5;
+  --red-400: #f87171;
+  --red-500: #ef4444; /* PRD danger */
+  --red-600: #dc2626;
+  --red-700: #b91c1c;
+
+  --violet-400: #a78bfa;
+  --violet-600: #7c3aed;
+  --cyan-400: #22d3ee;
+  --cyan-700: #0e7490;
+  --pink-400: #f472b6;
+  --pink-600: #db2777;
+
+  /* ======================================================================
+     SEMANTIC — DARK (the origin)
+     ====================================================================== */
+
+  /* Surfaces */
+  --bg: var(--zinc-950); /* PRD #09090B */
+  --surface: var(--zinc-900); /* PRD #18181B */
+  --surface-elevated: var(--zinc-800); /* PRD #27272A */
+  --surface-sunken: #050507;
+  --overlay: rgb(9 9 11 / 0.72);
+
+  /* Text — ratios measured against --bg */
+  --text-primary: var(--zinc-50); /* 19.06:1  AAA */
+  --text-secondary: var(--zinc-400); /* 7.76:1   AAA */
+  --text-muted: var(--zinc-500); /* 4.12:1   LARGE TEXT ONLY — fails AA at body size */
+  --text-inverse: var(--zinc-950);
+
+  /* Borders — WCAG 1.4.11 requires 3:1 only for boundaries that identify a
+     control. Decorative rules are exempt, which is why two tokens exist. */
+  --border: #2a2a2a; /* 1.39:1  separators and card edges ONLY */
+  --border-interactive: var(--zinc-500); /* 4.12:1  inputs, toggles, control edges */
+  --border-strong: var(--zinc-400); /* 7.76:1  hover and active states */
+
+  /* Accent — positive movement and primary actions (PRD DS-05) */
+  --accent: var(--emerald-500); /* 7.84:1 as text on --bg */
+  --accent-hover: var(--emerald-400);
+  --accent-fill: var(--emerald-500);
+  --accent-on-fill: var(--zinc-950); /* 7.84:1 */
+  --accent-subtle: rgb(16 185 129 / 0.12);
+
+  /* Informational */
+  --info: var(--blue-400); /* 7.83:1 — blue-600 measures 3.85:1 and CANNOT be text here */
+  --info-fill: var(--blue-600); /* PRD #2563EB retained as a fill */
+  --info-on-fill: var(--white); /* 5.17:1 */
+  --info-subtle: rgb(37 99 235 / 0.16);
+
+  /* Warning */
+  --warning: var(--amber-500); /* 9.26:1 */
+  --warning-fill: var(--amber-500);
+  --warning-on-fill: var(--zinc-950); /* 9.26:1 */
+  --warning-subtle: rgb(245 158 11 / 0.14);
+
+  /* Danger */
+  --danger: var(--red-400); /* 7.19:1 as text */
+  --danger-fill: var(--red-600); /* white on red-500 measures 3.76:1; red-600 gives 4.83:1 */
+  --danger-on-fill: var(--white); /* 4.83:1 */
+  --danger-subtle: rgb(239 68 68 / 0.14);
+
+  /* Focus — never removed, only restyled (PRD ACC-03) */
+  --focus-ring: var(--emerald-400); /* 10.35:1 */
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  /* Charts — all ≥3:1 on --bg (PRD A-12, ACC-06) */
+  --chart-1: var(--emerald-400); /* 10.35:1 */
+  --chart-2: var(--blue-400); /* 7.83:1 */
+  --chart-3: var(--amber-400); /* 11.92:1 */
+  --chart-4: var(--violet-400); /* 7.31:1 */
+  --chart-5: var(--cyan-400); /* 11.01:1 */
+  --chart-6: var(--pink-400); /* 7.51:1 */
+  --chart-7: var(--red-400); /* 7.19:1 */
+  --chart-grid: #232326;
+  --chart-axis: var(--zinc-500);
+  /* Projections must be visually distinct from actuals (PRD A-14) */
+  --chart-projected-opacity: 0.45;
+  --chart-projected-dash: 4 4;
+
+  /* Elevation. In dark, depth comes mostly from surface lightness; shadow is a
+     supporting cue, not the mechanism. */
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.45);
+  --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.55);
+  --shadow-sheet: 0 -8px 40px rgb(0 0 0 / 0.6);
+}
+
+/* ========================================================================
+   SEMANTIC — LIGHT
+   A derived first-class output, not an inversion. Every hue moves to a darker
+   step because the same value that reads on near-black is unreadable on white.
+   (PRD DS-01)
+   ======================================================================== */
+
+:root.light {
+  --bg: var(--white);
+  --surface: var(--zinc-50);
+  --surface-elevated: var(--zinc-100);
+  --surface-sunken: var(--zinc-100);
+  --overlay: rgb(9 9 11 / 0.32);
+
+  --text-primary: var(--zinc-900); /* 17.72:1 */
+  --text-secondary: var(--zinc-600); /* 7.73:1 */
+  --text-muted: var(--zinc-500); /* 4.83:1 — passes AA at body size in light */
+  --text-inverse: var(--white);
+
+  --border: var(--zinc-200); /* 1.27:1  decorative only */
+  --border-interactive: var(--zinc-500); /* 4.83:1 */
+  --border-strong: var(--zinc-600); /* 7.73:1 */
+
+  --accent: var(--emerald-700); /* 5.48:1 — emerald-600 measures 3.77:1, too low for text */
+  --accent-hover: var(--emerald-600);
+  --accent-fill: var(--emerald-700);
+  --accent-on-fill: var(--white); /* 5.48:1 */
+  --accent-subtle: rgb(4 120 87 / 0.1);
+
+  --info: var(--blue-600); /* 5.17:1 — the PRD hue works as text here */
+  --info-fill: var(--blue-600);
+  --info-on-fill: var(--white); /* 5.17:1 */
+  --info-subtle: rgb(37 99 235 / 0.1);
+
+  /* The classic accessibility trap: amber-500 on white measures 2.15:1 and
+     amber-600 only 3.19:1. Warning text must drop to amber-700. */
+  --warning: var(--amber-700); /* 5.02:1 */
+  --warning-fill: var(--amber-500); /* the PRD hue stays as a fill */
+  --warning-on-fill: var(--zinc-950); /* 9.26:1 */
+  --warning-subtle: rgb(180 83 9 / 0.1);
+
+  --danger: var(--red-600); /* 4.83:1 */
+  --danger-fill: var(--red-600);
+  --danger-on-fill: var(--white); /* 4.83:1 */
+  --danger-subtle: rgb(220 38 38 / 0.1);
+
+  --focus-ring: var(--emerald-700);
+
+  --chart-1: var(--emerald-600); /* 3.77:1 */
+  --chart-2: var(--blue-600); /* 5.17:1 */
+  --chart-3: var(--amber-600); /* 3.19:1 */
+  --chart-4: var(--violet-600); /* 5.70:1 */
+  --chart-5: var(--cyan-700); /* 5.36:1 */
+  --chart-6: var(--pink-600); /* 4.60:1 */
+  --chart-7: var(--red-600); /* 4.83:1 */
+  --chart-grid: var(--zinc-200);
+  --chart-axis: var(--zinc-500);
+
+  --shadow-sm: 0 1px 2px rgb(9 9 11 / 0.06);
+  --shadow-md: 0 4px 12px rgb(9 9 11 / 0.08);
+  --shadow-lg: 0 12px 32px rgb(9 9 11 / 0.12);
+  --shadow-sheet: 0 -8px 40px rgb(9 9 11 / 0.14);
+}
+
+/* ========================================================================
+   NON-COLOUR TOKENS — theme-independent
+   ======================================================================== */
+
+:root {
+  /* --- Typography -------------------------------------------------------
+     Five sizes, capped. Hierarchy comes from weight and space, not from a
+     proliferation of sizes. (PRD DS-07) */
+  --font-sans:
+    'SF Pro Display', 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Inter',
+    system-ui, sans-serif;
+  --font-mono: 'SF Mono', ui-monospace, 'JetBrains Mono', monospace;
+
+  /* Hero figures scale with the viewport; everything else is fixed. */
+  --text-display: clamp(2.5rem, 1.9rem + 3vw, 3.5rem); /* 40 → 56 */
+  --text-title: 1.5rem; /* 24 */
+  --text-body: 0.9375rem; /* 15 */
+  --text-label: 0.8125rem; /* 13 */
+  --text-caption: 0.6875rem; /* 11 */
+
+  --leading-display: 1.05;
+  --leading-title: 1.25;
+  --leading-body: 1.5;
+  --leading-tight: 1.35;
+
+  --tracking-display: -0.022em;
+  --tracking-title: -0.011em;
+  --tracking-body: 0;
+  --tracking-caption: 0.02em;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* Every monetary figure uses this. Digits must align across rows or a column
+     of amounts cannot be scanned. (PRD M-07) */
+  --numeric-tabular: tabular-nums lining-nums;
+
+  /* --- Spacing — 8-point, with a single 4px half-step ------------------- */
+  --space-0-5: 0.25rem; /* 4  */
+  --space-1: 0.5rem; /* 8  */
+  --space-2: 1rem; /* 16 */
+  --space-3: 1.5rem; /* 24 */
+  --space-4: 2rem; /* 32 */
+  --space-5: 2.5rem; /* 40 */
+  --space-6: 3rem; /* 48 */
+  --space-8: 4rem; /* 64 */
+  --space-10: 5rem; /* 80 */
+  --space-12: 6rem; /* 96 */
+
+  /* --- Radius ----------------------------------------------------------- */
+  --radius-card: 20px; /* PRD */
+  --radius-chart: 20px; /* PRD */
+  --radius-button: 16px; /* PRD */
+  --radius-input: 16px; /* PRD */
+  --radius-sheet: 24px;
+  --radius-sm: 12px;
+  --radius-pill: 999px;
+
+  /* --- Motion ----------------------------------------------------------
+     150–200ms, ease-out. Nothing bounces, nothing overshoots. (PRD UX-10) */
+  --duration-fast: 150ms;
+  --duration-base: 175ms;
+  --duration-slow: 200ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* --- Layout ----------------------------------------------------------- */
+  --max-content-width: 1440px;
+  --nav-height: 64px;
+  --touch-target-min: 44px; /* PRD ACC-05 */
+
+  --z-nav: 40;
+  --z-fab: 45;
+  --z-sheet: 50;
+  --z-modal: 60;
+  --z-toast: 70;
+}
+
+/* Honour the OS preference when the user has not chosen explicitly. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 1ms;
+    --duration-base: 1ms;
+    --duration-slow: 1ms;
+  }
+}

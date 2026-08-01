@@ -1,2 +1,2 @@
-/** Shared motion components. Implementation: Phase 8. */
-export {}
+/** Shared motion components and primitives. */
+export * from './primitives'
