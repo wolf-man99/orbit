@@ -4,8 +4,8 @@ Phase deliverables for the Orbit Personal Capital Operating System. Each phase i
 
 | Phase | Deliverable | Document | Status |
 | --- | --- | --- | --- |
-| 1 | Product Requirements Document | [01-product-requirements.md](./01-product-requirements.md) | Awaiting approval |
-| 2 | Information Architecture | — | — |
+| 1 | Product Requirements Document | [01-product-requirements.md](./01-product-requirements.md) | Approved |
+| 2 | Information Architecture | [02-information-architecture.md](./02-information-architecture.md) | Awaiting approval |
 | 3 | Database Schema | — | — |
 | 4 | System Architecture | — | — |
 | 5 | Folder Structure | — | — |
