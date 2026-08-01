@@ -30,7 +30,8 @@
     "size": "size-limit",
     "verify": "pnpm typecheck && pnpm lint && pnpm boundaries && pnpm check:contrast && pnpm test",
     "check:contrast": "node scripts/check-contrast.mjs",
-    "gallery": "node scripts/capture-gallery.mjs"
+    "gallery": "node scripts/capture-gallery.mjs",
+    "screens": "node scripts/capture-screens.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",

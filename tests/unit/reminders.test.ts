@@ -259,3 +259,16 @@ describe('health edge cases', () => {
     }
   })
 })
+
+describe('factor scores are display-safe', () => {
+  it('rounds every factor score to an integer', () => {
+    const result = portfolioHealth({
+      collectionRateBps: 7272, overdueMinor: minor(27_639n), outstandingMinor: minor(1_405_000n),
+      concentrationHhi: 2643, avgDaysToSettle: 3, portfolioAgeMonths: 14,
+    })
+    for (const factor of result.factors) {
+      expect(Number.isInteger(factor.score)).toBe(true)
+    }
+    expect(Number.isInteger(result.score)).toBe(true)
+  })
+})

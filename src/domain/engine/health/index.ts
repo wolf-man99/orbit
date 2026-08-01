@@ -25,7 +25,14 @@ export interface Composite {
   readonly factors: readonly Factor[]
 }
 
-const clamp = (value: number, low = 0, high = 100) => Math.max(low, Math.min(high, value))
+/**
+ * Clamps AND rounds. A factor score is displayed, and an unrounded one renders
+ * as 81.744444444444444 — which overflowed its column the first time these
+ * were put on screen. Rounding at the source is the fix; rounding at each
+ * display site is a rule someone will forget.
+ */
+const clamp = (value: number, low = 0, high = 100) =>
+  Math.round(Math.max(low, Math.min(high, value)))
 
 const weightedScore = (factors: readonly Factor[]): number =>
   Math.round(factors.reduce((total, f) => total + f.score * (f.weight / 100), 0))
