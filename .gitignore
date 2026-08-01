@@ -12,3 +12,5 @@ coverage/
 playwright-report/
 test-results/
 prisma/migrations/dev.db*
+next-env.d.ts
+.vercel
