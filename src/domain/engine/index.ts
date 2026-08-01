@@ -7,3 +7,5 @@
 export * from './interest'
 export * from './allocation'
 export * from './health'
+export * from './reminders'
+export * from './analytics'
