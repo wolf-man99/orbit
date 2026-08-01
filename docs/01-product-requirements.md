@@ -743,8 +743,8 @@ Architectural accommodations required in V1 so these are additive later, never a
 | --- | --- | --- |
 | 1 | Product Requirements Document | **This document** — approved |
 | 2 | Information Architecture | Approved |
-| 3 | Database Schema | Delivered, awaiting approval |
-| 4 | System Architecture | — |
+| 3 | Database Schema | Approved |
+| 4 | System Architecture | Delivered, awaiting approval |
 | 5 | Folder Structure | — |
 | 6 | API Design | — |
 | 7 | Design System | — |
