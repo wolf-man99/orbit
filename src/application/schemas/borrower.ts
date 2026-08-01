@@ -1,6 +1,6 @@
 /** Borrower contracts. (PRD B-09, B-10, BP-10) */
 import { z } from 'zod'
-import { idempotencyKeySchema, plainDateSchema, uuidSchema } from './common'
+import { idempotencyKeySchema, plainDateSchema } from './common'
 
 export const relationshipTagSchema = z.enum([
   'FAMILY',

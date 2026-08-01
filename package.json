@@ -29,7 +29,8 @@
     "db:studio": "prisma studio",
     "size": "size-limit",
     "verify": "pnpm typecheck && pnpm lint && pnpm boundaries && pnpm check:contrast && pnpm test",
-    "check:contrast": "node scripts/check-contrast.mjs"
+    "check:contrast": "node scripts/check-contrast.mjs",
+    "gallery": "node scripts/capture-gallery.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",
@@ -65,8 +66,11 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@next/eslint-plugin-next": "^16.2.12",
     "@playwright/test": "^1.50.1",
     "@size-limit/file": "^11.2.0",
+    "@tailwindcss/postcss": "^4.0.6",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
     "@types/node": "^22.13.4",
@@ -76,7 +80,6 @@
     "@vitest/coverage-v8": "^3.0.5",
     "dependency-cruiser": "^17.0.0",
     "eslint": "^9.20.1",
-    "eslint-config-next": "^15.5.0",
     "eslint-config-prettier": "^10.0.1",
     "fast-check": "^3.23.2",
     "postcss": "^8.5.2",
@@ -85,7 +88,6 @@
     "prisma": "^7.9.1",
     "size-limit": "^11.2.0",
     "tailwindcss": "^4.0.6",
-    "@tailwindcss/postcss": "^4.0.6",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.24.0",
     "vitest": "^3.0.5"

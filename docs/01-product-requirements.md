@@ -747,8 +747,8 @@ Architectural accommodations required in V1 so these are additive later, never a
 | 4 | System Architecture | Approved |
 | 5 | Folder Structure | Approved |
 | 6 | API Design | Approved |
-| 7 | Design System | Delivered, awaiting approval |
-| 8 | UI Components | — |
+| 7 | Design System | Approved |
+| 8 | UI Components | Delivered, awaiting approval |
 | 9 | Complete UI Screens | — |
 | 10 | Backend Implementation | — |
 | 11 | Analytics Engine | — |
