@@ -46,6 +46,10 @@ export interface HealthInput {
   readonly collectionRateBps: number
   readonly overdueMinor: Minor
   readonly outstandingMinor: Minor
+  /** How many borrowers are currently overdue. */
+  readonly overdueBorrowers: number
+  /** How many borrowers hold an open loan. */
+  readonly activeBorrowers: number
   /** Herfindahl index across borrower exposure, 0–10000. */
   readonly concentrationHhi: number
   /** Mean days between due and settled across the window. */
@@ -60,25 +64,47 @@ export function portfolioHealth(input: HealthInput): Composite {
       ? Number((input.overdueMinor * 10_000n) / input.outstandingMinor) / 10_000
       : 0
 
+  /**
+   * Overdue BREADTH, distinct from overdue value.
+   *
+   * Value alone is not enough. A book where four of five borrowers are overdue
+   * for small sums scores nearly perfectly on exposure — 2% of capital — while
+   * describing a portfolio in real trouble. Breadth measures how many
+   * relationships are affected, which is the signal a lender actually feels.
+   *
+   * The curve reaches zero at 80% of borrowers overdue: past that point the
+   * factor has nothing left to say, and the composite should be carried by the
+   * other five.
+   */
+  const overdueBreadth =
+    input.activeBorrowers > 0 ? input.overdueBorrowers / input.activeBorrowers : 0
+
   const factors: Factor[] = [
     {
       key: 'collection',
       label: 'Collection rate',
-      weight: 35,
+      weight: 30,
       score: clamp(input.collectionRateBps / 100),
       detail: `${(input.collectionRateBps / 100).toFixed(0)}% of interest due was received`,
     },
     {
       key: 'overdue',
       label: 'Overdue exposure',
-      weight: 25,
+      weight: 20,
       score: clamp(100 - overdueShare * 300),
       detail: `${(overdueShare * 100).toFixed(1)}% of outstanding capital is overdue`,
     },
     {
+      key: 'breadth',
+      label: 'Overdue borrowers',
+      weight: 15,
+      score: clamp(100 - overdueBreadth * 125),
+      detail: `${input.overdueBorrowers} of ${input.activeBorrowers} borrowers are overdue`,
+    },
+    {
       key: 'concentration',
       label: 'Concentration',
-      weight: 20,
+      weight: 15,
       // HHI: 10000 is a single borrower, ~1000 is well spread.
       score: clamp(100 - (input.concentrationHhi - 1000) / 90),
       detail: `Largest exposures give a Herfindahl index of ${input.concentrationHhi}`,

@@ -12,8 +12,8 @@ Phases 1–13 delivered. See [`docs/`](./docs/README.md); implementation notes a
 known gaps are in [Phases 9–13](./docs/09-13-implementation.md).
 
 ```
-pnpm verify     typecheck · lint · boundaries · contrast · 163 unit tests
-pnpm test:e2e   17 critical-path tests
+pnpm verify     typecheck · lint · boundaries · contrast · 177 unit tests
+pnpm test:e2e   26 critical-path tests
 pnpm db:verify  27 ledger invariants against Postgres
 ```
 

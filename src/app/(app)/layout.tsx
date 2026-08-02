@@ -1,7 +1,7 @@
 import { Bell, CircleUser } from 'lucide-react'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
-import { BottomNav } from '@/components/layout'
+import { BottomNav, Sidebar } from '@/components/layout'
 
 /**
  * Application chrome. (Phase 2 §3.1)
@@ -13,8 +13,15 @@ import { BottomNav } from '@/components/layout'
  */
 export default function AppLayout({ children }: { readonly children: ReactNode }) {
   return (
-    <div className="min-h-dvh bg-bg">
-      <header className="sticky top-0 z-40 border-b border-border bg-bg/80 backdrop-blur-xl">
+    <div className="min-h-dvh bg-bg lg:flex">
+      {/* Desktop only; the bottom bar covers narrow viewports. (Phase 2 §3.2) */}
+      <Sidebar />
+
+      <div className="min-w-0 flex-1">
+      {/* The top bar carries Notifications and Settings on mobile, where the
+          bottom bar has no room for them. On desktop the sidebar owns both, so
+          only the brand and account remain. */}
+      <header className="sticky top-0 z-40 border-b border-border bg-bg/80 backdrop-blur-xl lg:hidden">
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
           <Link href="/dashboard" className="text-label font-semibold tracking-tight">
             Orbit
@@ -33,8 +40,9 @@ export default function AppLayout({ children }: { readonly children: ReactNode }
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-4 pb-36 pt-6 lg:pb-12">{children}</main>
+      <main className="mx-auto max-w-5xl px-4 pb-36 pt-6 lg:pb-12 lg:pt-10">{children}</main>
       <BottomNav />
+      </div>
     </div>
   )
 }

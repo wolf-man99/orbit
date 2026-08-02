@@ -26,12 +26,14 @@ test.describe('dashboard', () => {
     // unscoped locator matched both and failed — which is the test correctly
     // reporting that the dashboard says those words twice.
     const health = page.locator('section', { has: page.getByRole('heading', { name: 'Portfolio health' }) })
-    for (const factor of ['Collection rate', 'Overdue exposure', 'Concentration', 'Punctuality']) {
+    for (const factor of [
+      'Collection rate', 'Overdue exposure', 'Overdue borrowers', 'Concentration', 'Punctuality',
+    ]) {
       await expect(health.getByText(factor, { exact: true })).toBeVisible()
     }
     // Each factor states its weight explicitly, so a weight cannot be misread
-    // as the metric itself.
-    await expect(page.getByText('35% weight', { exact: false })).toBeVisible()
+    // as the metric itself. 30% is collection's weight after the Q32 rebalance.
+    await expect(health.getByText('30% weight', { exact: false }).first()).toBeVisible()
   })
 
   test('renders every factor score as an integer', async ({ page }) => {
@@ -85,16 +87,52 @@ test.describe('tone', () => {
 })
 
 test.describe('navigation', () => {
-  // Mobile only. Phase 2 §3.2 specifies a desktop sidebar carrying the same
-  // information architecture; it is NOT yet built, and this test failing on the
-  // desktop project is how that gap was found. Tracked as Q31.
-  test('offers four destinations plus a centred action', async ({ page }, testInfo) => {
-    test.skip(testInfo.project.name !== 'mobile', 'desktop sidebar not yet built — Q31')
+  // Runs on BOTH projects. Q31 is closed: the desktop sidebar now carries the
+  // same information architecture as the mobile bottom bar, so the same
+  // assertions hold at either width.
+  test('offers the same destinations plus a record action at every width', async ({ page }) => {
     await page.goto('/dashboard')
     const nav = page.getByRole('navigation', { name: 'Primary' })
     for (const label of ['Dashboard', 'Borrowers', 'Transactions', 'Analytics']) {
       await expect(nav.getByText(label, { exact: true })).toBeVisible()
     }
-    await expect(page.getByRole('button', { name: 'Record payment' })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Record payment/ })).toBeVisible()
+  })
+
+  test('reaches every screen', async ({ page }) => {
+    for (const [path, heading] of [
+      ['/transactions', 'Transactions'],
+      ['/analytics', 'Analytics'],
+      ['/notifications', 'Notifications'],
+      ['/settings', 'Settings'],
+    ]) {
+      await page.goto(path as string)
+      await expect(page.getByRole('heading', { name: heading as string, level: 1 })).toBeVisible()
+    }
+  })
+})
+
+test.describe('analytics', () => {
+  test('states its read in words above the chart, and offers a table', async ({ page }) => {
+    await page.goto('/analytics')
+    // A chart that needs interpretation has not finished its job.
+    await expect(page.getByText(/% of interest due has been received|Nothing has fallen due/)).toBeVisible()
+    // Every chart has an accessible table equivalent. (PRD A-13)
+    await expect(page.getByText('View as table')).toBeVisible()
+  })
+})
+
+test.describe('health model (Q32)', () => {
+  test('reports overdue breadth, not only overdue value', async ({ page }) => {
+    await page.goto('/dashboard')
+    const health = page.locator('section', { has: page.getByRole('heading', { name: 'Portfolio health' }) })
+    await expect(health.getByText('Overdue borrowers', { exact: true })).toBeVisible()
+    await expect(health.getByText(/\d+ of \d+ borrowers are overdue/)).toBeVisible()
+  })
+
+  test('does not read Strong while most borrowers are overdue', async ({ page }) => {
+    await page.goto('/dashboard')
+    const health = page.locator('section', { has: page.getByRole('heading', { name: 'Portfolio health' }) })
+    await expect(health.getByText('Strong', { exact: true })).toHaveCount(0)
   })
 })

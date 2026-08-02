@@ -19,6 +19,8 @@ import { bps, currencyCode, minor, sum, type Minor } from '@/domain/money'
 import { plainDate, type PlainDate } from '@/domain/time'
 import { computeAccrual, periodStatus, type AccrualInput } from '@/domain/engine/interest'
 import { concentrationIndex, portfolioHealth } from '@/domain/engine/health'
+import { collectionRateBps, monthlySeries, topBy, type MonthBucket } from '@/domain/engine/analytics'
+import { generateReminders } from '@/domain/engine/reminders'
 
 export const AS_OF = plainDate('2026-05-20')
 const INR = currencyCode('INR')
@@ -143,6 +145,8 @@ export const portfolio = (() => {
     collectionRateBps,
     overdueMinor: overdue,
     outstandingMinor: outstandingPrincipal,
+    overdueBorrowers: borrowers.filter((b) => b.status === 'OVERDUE').length,
+    activeBorrowers: borrowers.length,
     concentrationHhi: concentrationIndex(borrowers.map((b) => b.outstandingPrincipal)),
     avgDaysToSettle: 3,
     portfolioAgeMonths: 14,
@@ -208,4 +212,152 @@ export function loadBorrowers(): { readonly asOf: PlainDate; readonly rows: read
 
 export function loadBorrower(id: string): BorrowerView | undefined {
   return borrowers.find((b) => b.id === id)
+}
+
+// ---------------------------------------------------------------------------
+// Ledger, analytics, reminders, settings
+// ---------------------------------------------------------------------------
+
+export interface LedgerEntry {
+  readonly id: string
+  readonly borrowerId: string
+  readonly borrowerName: string
+  readonly type: 'LOAN_DISBURSED' | 'INTEREST_RECEIVED' | 'PRINCIPAL_RECEIVED'
+  readonly amount: Minor
+  readonly occurredOn: PlainDate
+  readonly note?: string
+}
+
+const TYPE_LABEL: Record<LedgerEntry['type'], string> = {
+  LOAN_DISBURSED: 'Disbursed',
+  INTEREST_RECEIVED: 'Interest received',
+  PRINCIPAL_RECEIVED: 'Principal received',
+}
+
+export const ledgerTypeLabel = (type: LedgerEntry['type']): string => TYPE_LABEL[type]
+
+/** Direction: money toward the lender is positive. */
+export const isInflow = (type: LedgerEntry['type']): boolean => type !== 'LOAN_DISBURSED'
+
+function buildLedger(): readonly LedgerEntry[] {
+  const entries: LedgerEntry[] = []
+  for (const [index, seed] of SEEDS.entries()) {
+    const borrower = borrowers[index]
+    if (!borrower) continue
+
+    entries.push({
+      id: `${seed.id}-disb`,
+      borrowerId: seed.id,
+      borrowerName: seed.name,
+      type: 'LOAN_DISBURSED',
+      amount: minor(seed.principal),
+      occurredOn: plainDate(seed.start),
+    })
+
+    for (const repayment of seed.repayments) {
+      entries.push({
+        id: `${seed.id}-prin-${repayment.on}`,
+        borrowerId: seed.id,
+        borrowerName: seed.name,
+        type: 'PRINCIPAL_RECEIVED',
+        amount: minor(repayment.amount),
+        occurredOn: plainDate(repayment.on),
+      })
+    }
+
+    for (const cycle of borrower.cycles) {
+      if (cycle.settled <= 0n) continue
+      entries.push({
+        id: `${seed.id}-int-${cycle.index}`,
+        borrowerId: seed.id,
+        borrowerName: seed.name,
+        type: 'INTEREST_RECEIVED',
+        amount: cycle.settled,
+        occurredOn: cycle.dueOn,
+        note: `Cycle ${cycle.index}`,
+      })
+    }
+  }
+  // Newest first, matching the (occurredAt desc, seq desc) index. (Phase 3 §6)
+  return entries.sort((a, b) => b.occurredOn.localeCompare(a.occurredOn) || a.id.localeCompare(b.id))
+}
+
+const ledger = buildLedger()
+
+export function loadTransactions(): {
+  readonly asOf: PlainDate
+  readonly entries: readonly LedgerEntry[]
+  readonly inflow: Minor
+  readonly outflow: Minor
+} {
+  const inflow = sum(ledger.filter((e) => isInflow(e.type)).map((e) => e.amount))
+  const outflow = sum(ledger.filter((e) => !isInflow(e.type)).map((e) => e.amount))
+  return { asOf: AS_OF, entries: ledger, inflow, outflow }
+}
+
+export function loadAnalytics(): {
+  readonly asOf: PlainDate
+  readonly months: readonly MonthBucket[]
+  readonly collectionRateBps: number | null
+  readonly topBorrowers: readonly { id: string; name: string; amount: Minor }[]
+} {
+  const months = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05']
+  const buckets = monthlySeries(
+    ledger.map((e) => ({ occurredOn: e.occurredOn, type: e.type, amountMinor: e.amount })),
+    borrowers.flatMap((b) => b.cycles.map((c) => ({ dueOn: c.dueOn, accruedMinor: c.accrued }))),
+    months,
+  )
+  return {
+    asOf: AS_OF,
+    months: buckets,
+    collectionRateBps: collectionRateBps(buckets),
+    topBorrowers: topBy(
+      borrowers.map((b) => ({ id: b.id, name: b.name, amount: b.outstandingPrincipal })),
+      (row) => row.amount,
+      5,
+    ),
+  }
+}
+
+export interface ReminderView {
+  readonly id: string
+  readonly type: string
+  readonly title: string
+  readonly body: string
+  readonly dueOn: PlainDate
+  readonly deepLink: string
+  readonly overdue: boolean
+}
+
+export function loadReminders(): { readonly asOf: PlainDate; readonly rows: readonly ReminderView[] } {
+  const rows = generateReminders({
+    asOf: AS_OF,
+    periods: borrowers.flatMap((b) =>
+      b.cycles.map((c) => ({
+        id: `${b.id}-${c.index}`,
+        loanId: b.id,
+        borrowerId: b.id,
+        borrowerName: b.name,
+        cycleIndex: c.index,
+        dueOn: c.dueOn,
+        graceUntil: c.dueOn,
+        accrued: c.accrued,
+        settled: c.settled,
+      })),
+    ),
+    loans: [],
+    exposures: [],
+    closureLeadDays: 7,
+    concentrationWarnBps: 2500,
+  }).map((candidate) => ({
+    id: candidate.dedupeKey,
+    type: candidate.type,
+    title: candidate.title,
+    body: candidate.body,
+    dueOn: candidate.dueOn,
+    deepLink: candidate.deepLink,
+    overdue: candidate.type === 'OVERDUE',
+  }))
+
+  return { asOf: AS_OF, rows }
 }

@@ -94,6 +94,7 @@ describe('allocation overrides are validated', () => {
 describe('portfolio health always publishes its factors (PRD D-10)', () => {
   const healthy = portfolioHealth({
     collectionRateBps: 9800, overdueMinor: minor(0n), outstandingMinor: minor(100_000_000n),
+    overdueBorrowers: 0, activeBorrowers: 12,
     concentrationHhi: 1500, avgDaysToSettle: 2, portfolioAgeMonths: 24,
   })
 
@@ -103,7 +104,7 @@ describe('portfolio health always publishes its factors (PRD D-10)', () => {
   })
 
   it('returns every factor with its weight', () => {
-    expect(healthy.factors).toHaveLength(5)
+    expect(healthy.factors).toHaveLength(6)
     expect(healthy.factors.reduce((t, f) => t + f.weight, 0)).toBe(100)
     for (const factor of healthy.factors) expect(factor.detail.length).toBeGreaterThan(0)
   })
@@ -111,8 +112,8 @@ describe('portfolio health always publishes its factors (PRD D-10)', () => {
   it('drops sharply when collections fail', () => {
     const strained = portfolioHealth({
       collectionRateBps: 4000, overdueMinor: minor(30_000_000n),
-      outstandingMinor: minor(100_000_000n), concentrationHhi: 6000,
-      avgDaysToSettle: 20, portfolioAgeMonths: 3,
+      outstandingMinor: minor(100_000_000n), overdueBorrowers: 6, activeBorrowers: 10,
+      concentrationHhi: 6000, avgDaysToSettle: 20, portfolioAgeMonths: 3,
     })
     expect(strained.score).toBeLessThan(healthy.score)
     expect(['Watch', 'Strained']).toContain(strained.band)
@@ -121,6 +122,7 @@ describe('portfolio health always publishes its factors (PRD D-10)', () => {
   it('handles an empty portfolio without dividing by zero', () => {
     const empty = portfolioHealth({
       collectionRateBps: 0, overdueMinor: minor(0n), outstandingMinor: minor(0n),
+      overdueBorrowers: 0, activeBorrowers: 0,
       concentrationHhi: 0, avgDaysToSettle: 0, portfolioAgeMonths: 0,
     })
     expect(Number.isFinite(empty.score)).toBe(true)
@@ -168,5 +170,50 @@ describe('concentration index', () => {
   })
   it('is zero for an empty book', () => {
     expect(concentrationIndex([])).toBe(0)
+  })
+})
+
+describe('overdue breadth (Q32)', () => {
+  const base = {
+    collectionRateBps: 7300, overdueMinor: minor(27_639n),
+    outstandingMinor: minor(1_405_000n), concentrationHhi: 2643,
+    avgDaysToSettle: 3, portfolioAgeMonths: 14,
+  }
+
+  it('no longer reads Strong when most borrowers are overdue', () => {
+    // The exact case that exposed the gap: only 2% of capital overdue, but
+    // four of five relationships affected.
+    const result = portfolioHealth({ ...base, overdueBorrowers: 4, activeBorrowers: 5 })
+    expect(result.band).not.toBe('Strong')
+    expect(result.score).toBeLessThan(80)
+  })
+
+  it('scores a book where one of twenty is overdue far higher', () => {
+    const narrow = portfolioHealth({ ...base, overdueBorrowers: 1, activeBorrowers: 20 })
+    const broad = portfolioHealth({ ...base, overdueBorrowers: 4, activeBorrowers: 5 })
+    expect(narrow.score).toBeGreaterThan(broad.score)
+  })
+
+  it('separates breadth from value: same overdue amount, different spread', () => {
+    const concentrated = portfolioHealth({ ...base, overdueBorrowers: 1, activeBorrowers: 10 })
+    const spread = portfolioHealth({ ...base, overdueBorrowers: 8, activeBorrowers: 10 })
+    expect(concentrated.score).toBeGreaterThan(spread.score)
+  })
+
+  it('publishes breadth as its own explainable factor', () => {
+    const result = portfolioHealth({ ...base, overdueBorrowers: 4, activeBorrowers: 5 })
+    const breadth = result.factors.find((f) => f.key === 'breadth')
+    expect(breadth?.detail).toBe('4 of 5 borrowers are overdue')
+    expect(breadth?.weight).toBe(15)
+  })
+
+  it('keeps the weights summing to 100', () => {
+    const result = portfolioHealth({ ...base, overdueBorrowers: 0, activeBorrowers: 5 })
+    expect(result.factors.reduce((t, f) => t + f.weight, 0)).toBe(100)
+  })
+
+  it('handles a portfolio with no active borrowers', () => {
+    const result = portfolioHealth({ ...base, overdueBorrowers: 0, activeBorrowers: 0 })
+    expect(Number.isFinite(result.score)).toBe(true)
   })
 })

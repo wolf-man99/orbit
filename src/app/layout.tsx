@@ -5,6 +5,8 @@ import '@/styles/globals.css'
 export const metadata: Metadata = {
   title: 'Orbit — What Moves, Grows',
   description: 'A personal capital operating system for private lenders.',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: { capable: true, title: 'Orbit', statusBarStyle: 'black-translucent' },
 }
 
 export const viewport: Viewport = {

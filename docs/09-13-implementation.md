@@ -9,7 +9,7 @@
 | Version | 1.0 |
 | Status | Delivered |
 | Depends on | Phases 1–8 |
-| Verified | 163 unit tests · 17 E2E across mobile and desktop · engine ≥95% branches · boundaries, lint, contrast, build all clean |
+| Verified | 177 unit tests · 26 E2E across mobile and desktop · engine ≥95% branches · boundaries, lint, contrast, build all clean |
 
 ---
 
@@ -18,11 +18,11 @@
 ```
 ✓ pnpm typecheck        strict + 4 additional flags
 ✓ pnpm lint             clean
-✓ pnpm boundaries       86 modules, 147 dependencies, 0 violations
+✓ pnpm boundaries       93 modules, 0 violations
 ✓ pnpm check:contrast   66/66 WCAG 2.2 AA pairings
-✓ pnpm test             163/163
+✓ pnpm test             177/177
 ✓ pnpm test:coverage    engine 100% stmts/fns/lines, 95.23% branches (gate 95%)
-✓ pnpm test:e2e         17 passed, 1 skipped (recorded gap, §7)
+✓ pnpm test:e2e         26 passed, 0 skipped
 ✓ pnpm build            102 kB shared First Load JS (budget 180 kB)
 ```
 
@@ -144,22 +144,48 @@ Typecheck, lint, boundaries, and 151 tests were all green on a build containing:
 
 ---
 
-## 7. Known gaps
+## 7. Gaps closed and remaining
 
-Recorded rather than hidden.
+### 7.1 Closed
 
-| # | Gap | Evidence | Recommendation |
-| --- | --- | --- | --- |
-| **Q31** | **The desktop sidebar is not built.** Phase 2 §3.2 specifies one carrying the same IA; only the mobile bottom bar exists, and it is `lg:hidden`, so wide viewports have no primary navigation. | The desktop E2E navigation test fails; it is skipped with this reference rather than deleted | Build it before any desktop release |
-| **Q32** | **Portfolio health under-weights breadth.** The seeded portfolio reads **81, "Strong"** with **4 of 5 borrowers overdue**, because overdue is weighted by value (2% of outstanding) with no term for how many relationships are affected. | Visible in `screen-dashboard.png` | Add a breadth factor. This changes the published model, so it is a product decision, not a bug fix |
-| Q33 | Transactions, analytics, notifications, and settings screens are specified but not built | Route map, Phase 2 §4.2 | Next increment |
-| Q34 | The offline write queue, service worker, and push delivery are designed but not implemented | Phase 4 §10 | Next increment |
-| Q35 | `loadDashboard` and siblings still return seeded data | §6.1 | Swap the bodies; signatures are already correct |
-| Q36 | "Collection rate" appears twice on the dashboard — once as a health factor score, once as the rate itself | Found by an E2E strict-mode locator failure | Rename one, or drop it from the character tier |
+| # | Gap | Resolution |
+| --- | --- | --- |
+| **Q31** | Desktop sidebar missing — the bottom bar is `lg:hidden`, so wide viewports had no primary navigation | Built. Carries the same IA plus the secondary group (Notifications, Reports, Settings) the bar has no room for. The FAB becomes a **labelled** primary button: on a pointer device a floating circle is harder to hit than a button with a word in it, and there is space for the word. The desktop E2E navigation test is un-skipped and passing. |
+| **Q32** | Health read **81, "Strong"** with 4 of 5 borrowers overdue | New **Overdue borrowers** factor at 15%, with weights rebalanced (collection 35→30, exposure 25→20, concentration 20→15). The same portfolio now reads **69, "Steady"**. See §7.3. |
+| **Q33** | Transactions, analytics, notifications, settings screens unbuilt | All four built and covered by E2E |
+| **Q34** | Offline queue, service worker, push undelivered | Queue, service worker, manifest, and push handling delivered. See §7.4. |
 
-**Q32 is the one worth dwelling on.** It was invisible while the data was hand-written and obvious within seconds of rendering a realistic book. A scoring model that reads "Strong" while most of the portfolio is overdue would erode trust faster than any missing feature.
+### 7.2 Remaining
 
----
+| # | Gap | Note |
+| --- | --- | --- |
+| Q35 | `loadDashboard` and siblings still return seeded data | Signatures are already correct; the bodies swap to `withTenant` reads without touching a route |
+| Q36 | "Collection rate" appears twice on the dashboard — as a health factor score and as the rate itself | Found by an E2E strict-mode locator failure. Rename one, or drop it from the character tier |
+| Q37 | Auth, document upload, and report generation are designed but unimplemented | Phase 14 scope |
+
+### 7.3 Why the health model changed
+
+Overdue value alone is not enough. A book where four of five borrowers are overdue for small sums scored **94/100 on exposure** — 2% of capital — while describing a portfolio in real trouble. Breadth measures how many *relationships* are affected, which is the signal a lender actually feels.
+
+The curve reaches zero at 80% of borrowers overdue: past that point the factor has nothing left to say and the composite should be carried by the other five.
+
+| | Before | After |
+| --- | --- | --- |
+| Same seeded portfolio | **81 — Strong** | **69 — Steady** |
+| Overdue signal | value only | value (20%) + breadth (15%) |
+
+This was invisible while the data was hand-written and obvious within seconds of rendering a realistic book. It is the strongest argument in this project for building screens against engine-computed data rather than plausible-looking numbers.
+
+### 7.4 The offline queue
+
+| Decision | Reasoning |
+| --- | --- |
+| `200` and `201` both DROP | A replayed idempotency key returns 200 with the original event. Treating that as an error would report a failure for a payment that *was* recorded |
+| `4xx` including `409` PARKS | Retrying cannot fix a client bug. Unbounded retry hides a real problem from the user |
+| `5xx` and network errors RETRY, capped at 5 | Backoff 2s → 32s, then parked for review |
+| Flush **stops** at the first retryable failure | The queue is ordered by `occurredOn`; sending a later event past a stalled earlier one would reorder history |
+| `online` and `visibilitychange` are the primary triggers | Background Sync is unavailable in Safari. Relying on it would mean iOS silently never syncs |
+| The service worker never intercepts mutations | They are queued in IndexedDB, where a failure can be surfaced to the user |
 
 ## 8. Testing (Phase 13)
 
@@ -170,7 +196,8 @@ Recorded rather than hidden.
 | Unit — allocation & scoring | 21 tests including over-settlement and empty-portfolio division |
 | Unit — reminders & analytics | 32 tests including idempotent dedupe keys and a punitive-vocabulary assertion |
 | Unit — schemas & HTTP | 27 tests: floats rejected as money, replay mapped to 200, no PII in error bodies, constant-time secret comparison |
-| E2E | 17 across mobile and desktop |
+| Unit — offline queue | 8 tests over the classification table: what is dropped, retried, and parked |
+| E2E | 26 across mobile and desktop |
 | Database | 27 SQL invariants against real Postgres 16 (Phase 3) |
 
 E2E asserts the product's **promises**, not its markup: Indian money grouping, no score without its reasons, every factor score an integer, every figure dated, status carried by a word rather than a hue, and no punitive vocabulary on any screen.

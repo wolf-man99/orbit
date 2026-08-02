@@ -232,6 +232,7 @@ describe('health edge cases', () => {
   it('scores a portfolio with everything overdue', () => {
     const result = portfolioHealth({
       collectionRateBps: 0, overdueMinor: minor(100n), outstandingMinor: minor(100n),
+      overdueBorrowers: 10, activeBorrowers: 10,
       concentrationHhi: 10_000, avgDaysToSettle: 90, portfolioAgeMonths: 0,
     })
     expect(result.score).toBeGreaterThanOrEqual(0)
@@ -241,6 +242,7 @@ describe('health edge cases', () => {
   it('clamps a collection rate above 100%', () => {
     const result = portfolioHealth({
       collectionRateBps: 15_000, overdueMinor: minor(0n), outstandingMinor: minor(100n),
+      overdueBorrowers: 0, activeBorrowers: 8,
       concentrationHhi: 1000, avgDaysToSettle: 0, portfolioAgeMonths: 60,
     })
     expect(result.score).toBeLessThanOrEqual(100)
@@ -264,6 +266,7 @@ describe('factor scores are display-safe', () => {
   it('rounds every factor score to an integer', () => {
     const result = portfolioHealth({
       collectionRateBps: 7272, overdueMinor: minor(27_639n), outstandingMinor: minor(1_405_000n),
+      overdueBorrowers: 4, activeBorrowers: 5,
       concentrationHhi: 2643, avgDaysToSettle: 3, portfolioAgeMonths: 14,
     })
     for (const factor of result.factors) {

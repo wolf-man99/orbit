@@ -13,9 +13,13 @@ const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromi
 
 const screens = [
   ['dashboard', '/dashboard', { width: 430, height: 1400 }],
-  ['dashboard-wide', '/dashboard', { width: 1100, height: 1500 }],
+  ['dashboard-wide', '/dashboard', { width: 1280, height: 1400 }],
   ['borrowers', '/borrowers', { width: 430, height: 1100 }],
   ['borrower-profile', '/borrowers/b1', { width: 430, height: 1500 }],
+  ['transactions', '/transactions', { width: 430, height: 1600 }],
+  ['analytics', '/analytics', { width: 430, height: 1400 }],
+  ['notifications', '/notifications', { width: 430, height: 900 }],
+  ['settings', '/settings', { width: 430, height: 1400 }],
 ]
 
 for (const [name, path, viewport] of screens) {
