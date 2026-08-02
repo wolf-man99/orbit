@@ -69,6 +69,28 @@ pnpm build && pnpm size
 
 Steps 1–3 are `pnpm db:release`. A migration that breaks a ledger invariant fails the deploy rather than reaching production.
 
+### `prisma generate` is part of the build, not part of install
+
+The first real deployment failed to compile:
+
+```
+./src/composition/session.ts:126:31
+Type error: Parameter 'period' implicitly has an 'any' type.
+```
+
+`pnpm typecheck` had been green locally for four phases. The cause is a chain worth stating in full, because every link is silent:
+
+1. **Prisma 7 no longer generates the client on install.** Nothing in the repo ran `prisma generate` during a build, so on a fresh checkout `node_modules/.prisma/client` does not exist.
+2. `@prisma/client`'s shipped `default.d.ts` is one line: `export * from '.prisma/client/default'` — a re-export of the file that was never generated.
+3. **`skipLibCheck: true` suppresses the resulting error**, because it lives inside a `.d.ts` under `node_modules`. TypeScript reports nothing and every export of the module degrades to `any`.
+4. `any` propagates through `PrismaClient` → `TenantDb` → `db.accrualPeriod.findMany()` → `periods`, and `periods.map((period) => …)` finally trips `noImplicitAny` — nine errors across four files, of which Next.js prints the first.
+
+Locally it passed for one reason only: a generated client from an earlier manual `prisma generate` was sitting in the pnpm store. **The local check was reading an artifact that CI never produces.** Removing that directory reproduces all nine errors exactly.
+
+Both `build` and `typecheck` now run `prisma generate` first, so the check and the build agree and neither depends on what happens to be left over in `node_modules`. `prisma generate` needs no database connection — verified with `DATABASE_URL`, `DIRECT_URL`, and `SHADOW_DATABASE_URL` all unset, which is the state of a Vercel build.
+
+This is the third appearance of one pattern, after the schema validated as a scratch copy in Phase 4 and the empty `migrations/` directory in §10: **a verification that reads a different artifact than production does is not a verification.** Here it was worse than useless — `skipLibCheck` converted a missing dependency into `any`, so the type system reported success precisely where it had stopped checking.
+
 ---
 
 ## 3. Environment
@@ -101,6 +123,15 @@ Vercel evaluates cron in UTC. Every schedule in `vercel.json` is written by conv
 This is the same trap as the `date_trunc` index in Phase 3 and the month bucketing in Phase 11: treating UTC as "the" calendar silently produces wrong answers for every user outside it. A reminder job firing at 06:00 UTC reaches an Indian user at 11:30, after they have already wondered why nothing arrived.
 
 **Snapshot roll-up was originally hourly.** Vercel's Hobby plan rejects any cron expression that fires more than once a day, which surfaces only at deploy time, not locally. It now runs once daily, 15 minutes after `accrual` completes, so the day's snapshot reflects that day's posted interest rather than racing it. The tradeoff is coarser trend granularity — once a day instead of every hour — reversible by upgrading to Pro and restoring `0 * * * *` if intra-day granularity is ever needed.
+
+### Two ways a cron can appear to run and do nothing
+
+Both were live in `vercel.json` and neither fails a build:
+
+- **Four of the five declared paths had no route.** `accrual`, `snapshots`, `risk`, and `prune` were scheduled against URLs that returned 404. The schedule was valid, so Vercel accepted it; the jobs simply never existed. All five routes now exist.
+- **Vercel Cron issues `GET`.** The one route that did exist exported only `POST`, so the scheduler would have received 405 on every invocation. Every job route now exports both — `GET` for the scheduler, `POST` for a manual trigger — from one shared handler in `src/app/api/jobs/_handler.ts` so the two cannot drift apart again.
+
+Verified against a production build: all five return `200` with `Authorization: Bearer $CRON_SECRET`, and `403` with a wrong secret or none.
 
 ---
 
@@ -236,7 +267,7 @@ Sign-in, verify, sign-out, and the payment route are bound. Session resolution l
 | # | Item | Note |
 | --- | --- | --- |
 | Q42 | Document upload has contracts but no storage adapter | Supabase Storage binding |
-| Q43 | Job endpoints return stubs | The engines they call are implemented and tested |
+| Q43 | Job endpoints return stubs | All five routes now exist, authenticate, and answer the scheduler's `GET` — but they report zero work. The engines behind them are implemented and tested; the per-tenant loop that calls them is not written. |
 | Q44 | No load testing against the P-06/P-07 budgets | Needs a seeded database at realistic volume |
 | Q45 | Sign-in and verify have no UI | The routes work; the screens are not built |
 | Q46 | ~~Nothing has run against a hosted Supabase project~~ | **Closed** — see §11. Schema, RLS, invariants, the application role, and the `auth.users` trigger are all applied and verified on a live project. |

@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers'
+import { minor } from '@/domain/money'
 import type { RequestContext } from '@/application/queries/ports'
 import { contextFor, supabaseAuth, type AuthAdapter, type SessionUser } from '@/infrastructure/auth'
 import { withTenant } from '@/infrastructure/db'
@@ -126,8 +127,11 @@ export function paymentPorts(context: RequestContext): RecordPaymentPorts {
           return periods.map((period) => ({
             id: period.id,
             cycleIndex: period.cycleIndex,
-            accrued: period.accruedMinor as never,
-            alreadySettled: period.settledMinor as never,
+            // `minor()` rather than a cast: it accepts bigint and nothing else,
+            // so if these columns ever stop being BigInt the payment path fails
+            // to compile instead of feeding the allocation engine a string.
+            accrued: minor(period.accruedMinor),
+            alreadySettled: minor(period.settledMinor),
           }))
         },
         { readOnly: true },
