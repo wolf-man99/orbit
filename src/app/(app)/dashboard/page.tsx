@@ -3,7 +3,7 @@ import {
   ActivityTier, AttentionTier, CharacterTier, HealthTier, PositionTier,
 } from '@/features/dashboard/components/tiers'
 import { loadDashboard } from '@/application/queries/views'
-import { portfolioSource } from '@/composition'
+import { portfolioSource, requestContext } from '@/composition'
 
 /**
  * Dashboard — "Is my capital healthy today?" (Phase 2 §6.1)
@@ -14,7 +14,7 @@ import { portfolioSource } from '@/composition'
 export const dynamic = 'force-dynamic'
 
 export default async function DashboardPage() {
-  const { asOf: AS_OF, portfolio, collections, activity } = await loadDashboard(portfolioSource())
+  const { asOf: AS_OF, portfolio, collections, activity } = await loadDashboard(portfolioSource(await requestContext() ?? undefined))
 
   return (
     <>

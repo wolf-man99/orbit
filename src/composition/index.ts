@@ -13,19 +13,12 @@
 import { seededSource } from '@/application/queries/seeded-source'
 import type { PortfolioSource, RequestContext } from '@/application/queries/ports'
 import { databaseSource } from '@/infrastructure/db'
+import { hasDatabase } from './env'
 
-/**
- * True when a real database is configured.
- *
- * Without one — a demo deploy, the E2E run, a fresh clone — the seeded source
- * serves instead. Failing to boot would make the product unreviewable; silently
- * serving an empty portfolio would be worse, because it would look like data
- * loss.
- */
-export const hasDatabase = (): boolean =>
-  Boolean(process.env['DATABASE_URL'] ?? process.env['DIRECT_URL'])
 
 export type { RequestContext }
+export { hasAuth, hasDatabase } from './env'
+export * from './session'
 
 export function portfolioSource(context?: RequestContext): PortfolioSource {
   if (!context || !hasDatabase()) return seededSource()

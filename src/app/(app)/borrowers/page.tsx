@@ -3,14 +3,14 @@ import { sum } from '@/domain/money'
 import { Avatar, Card, Money, StatusPill } from '@/components'
 import { formatDueness, formatRate } from '@/lib/format'
 import { loadBorrowers } from '@/application/queries/views'
-import { portfolioSource } from '@/composition'
+import { portfolioSource, requestContext } from '@/composition'
 
 /** Borrowers — "Who owes me what, and who needs attention?" (Phase 2 §6.2) */
 export const dynamic = 'force-dynamic'
 
 export default async function BorrowersPage() {
   // Sorted so those needing attention lead. (Phase 2 §6.2, Q7)
-  const { asOf: AS_OF, rows: ordered } = await loadBorrowers(portfolioSource())
+  const { asOf: AS_OF, rows: ordered } = await loadBorrowers(portfolioSource(await requestContext() ?? undefined))
   const outstanding = sum(ordered.map((b) => b.outstandingPrincipal))
 
   return (

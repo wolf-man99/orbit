@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation'
 import { Avatar, Badge, Card, Money, StatusPill } from '@/components'
 import { formatDate, formatDueness, formatRate } from '@/lib/format'
 import { loadBorrower } from '@/application/queries/views'
-import { portfolioSource } from '@/composition'
+import { portfolioSource, requestContext } from '@/composition'
 
 /** Borrower profile — "What is my complete history with this person?" */
 export const dynamic = 'force-dynamic'
@@ -13,7 +13,7 @@ export default async function BorrowerPage({
   readonly params: Promise<{ readonly borrowerId: string }>
 }) {
   const { borrowerId } = await params
-  const { asOf: AS_OF, borrower } = await loadBorrower(portfolioSource(), borrowerId)
+  const { asOf: AS_OF, borrower } = await loadBorrower(portfolioSource(await requestContext() ?? undefined), borrowerId)
   if (!borrower) notFound()
 
   return (

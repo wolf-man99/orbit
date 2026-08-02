@@ -172,16 +172,39 @@ Redaction happens at the logger, not the call site. Relying on every caller to r
 
 ---
 
-## 10. Remaining
+## 10. Provisioning
+
+`pnpm db:provision` runs the five steps of §2 in order, each a gate that stops the run rather than letting a later step report success on a broken foundation.
+
+Running it against an empty database found a gap that had been invisible for eleven phases: **`prisma/migrations/` was empty.** Every earlier verification had applied the schema via `migrate diff` to a scratch file, so a real `migrate deploy` would have created no tables at all. The initial migration is now committed, and the full run was verified from an empty database through to the RLS check.
+
+The script never writes the generated password to a file and never passes it in a `psql` argument list, where `ps` would expose it to every process on the host — it goes over stdin.
+
+## 11. Auth wiring (Q41)
+
+Sign-in, verify, sign-out, and the payment route are bound. Session resolution lives in the composition root, since it needs both `infrastructure/auth` and `application`.
+
+| Decision | Reasoning |
+| --- | --- |
+| Sign-in returns success whether or not the address exists | Otherwise the endpoint is an account-existence oracle |
+| Verify failures are generic | A specific message reveals whether the address is registered |
+| The portfolio id is resolved from the session, never a parameter | An endpoint accepting one would make every tenancy control bypassable by editing a body |
+| A split receipt suffixes its idempotency key per posting | Two events are written and the unique constraint is on `(userId, idempotencyKey)` |
+| Without Supabase configured, a fixed demo identity is used | The product stays reviewable; reads fall back to the seeded source |
+
+**Exercising the endpoint found a bad failure mode.** With no database configured, recording a payment threw into a bare `500` with an empty body. Reads legitimately fall back to the seeded source, but a *write* has nowhere to land, and a payment the user believes was recorded and was not is the worst outcome this product can produce. It now returns `503` with an explicit sentence — *"Nothing was saved."* Constraint violations are caught and returned as `INVARIANT` sentences rather than SQLSTATEs.
+
+## 12. Remaining
 
 | # | Item | Note |
 | --- | --- | --- |
-| Q41 | Route handlers are not yet bound to the auth adapter or to `recordPayment` | The service, contracts, adapter, and composition root all exist; wiring is mechanical |
 | Q42 | Document upload has contracts but no storage adapter | Supabase Storage binding |
 | Q43 | Job endpoints return stubs | The engines they call are implemented and tested |
 | Q44 | No load testing against the P-06/P-07 budgets | Needs a seeded database at realistic volume |
+| Q45 | Sign-in and verify have no UI | The routes work; the screens are not built |
+| Q46 | Nothing has run against a hosted Supabase project | All database verification is against local Postgres 16. The Supabase-specific surface — hosted auth, the `auth.users` trigger, storage, pgBouncer — is written but unexercised. |
 
-None of these is a design question. Each is wiring against an interface that exists and is tested.
+**Q46 is the honest limit of what has been proven.** The mechanisms are verified; the hosted instance is not, and cannot be without credentials.
 
 ---
 

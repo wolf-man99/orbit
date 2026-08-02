@@ -3,13 +3,13 @@ import Link from 'next/link'
 import { Badge, Card, EmptyState } from '@/components'
 import { formatDate } from '@/lib/format'
 import { loadReminders } from '@/application/queries/views'
-import { portfolioSource } from '@/composition'
+import { portfolioSource, requestContext } from '@/composition'
 
 /** Notifications — "What needs me?" (Phase 2 §6, §12.3) */
 export const dynamic = 'force-dynamic'
 
 export default async function NotificationsPage() {
-  const { asOf, rows } = await loadReminders(portfolioSource())
+  const { asOf, rows } = await loadReminders(portfolioSource(await requestContext() ?? undefined))
 
   return (
     <>

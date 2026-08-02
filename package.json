@@ -33,7 +33,8 @@
     "gallery": "node scripts/capture-gallery.mjs",
     "screens": "node scripts/capture-screens.mjs",
     "db:verify-rls": "node scripts/verify-rls.mjs",
-    "db:release": "pnpm db:deploy && pnpm db:sql && pnpm db:verify"
+    "db:release": "pnpm db:deploy && pnpm db:sql && pnpm db:verify",
+    "db:provision": "node scripts/provision.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",
