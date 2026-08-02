@@ -74,6 +74,24 @@ begin
 end
 $$;
 
+-- The owner must be able to `set role orbit_app` — not to use it, but to prove
+-- the policies below actually bite (see tests/ledger_invariants.sql, which
+-- assumes the role and asserts it cannot see another tenant's rows). A local
+-- superuser can do this unconditionally; a managed Postgres owner such as
+-- Supabase's `postgres` cannot, and the verification silently becomes
+-- unrunnable — the failure mode this whole file exists to prevent.
+--
+-- INHERIT FALSE grants only the ability to assume the role, not its privileges,
+-- so the owner gains nothing it did not already outrank.
+do $$
+begin
+  execute format('grant orbit_app to %I with inherit false, set true', current_user);
+exception
+  when insufficient_privilege or duplicate_object then
+    raise notice 'could not grant orbit_app to %: RLS verification may be unrunnable here', current_user;
+end
+$$;
+
 grant usage on schema public, orbit to orbit_app;
 grant execute on function orbit.current_user_id() to orbit_app;
 

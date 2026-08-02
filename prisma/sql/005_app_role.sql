@@ -31,8 +31,26 @@ $$;
 alter role orbit_app with login password :'password';
 
 -- orbit_app owns nothing and holds no BYPASSRLS. Stated explicitly rather than
--- assumed, because inheriting either would disable every policy.
-alter role orbit_app nosuperuser nocreatedb nocreaterole noinherit nobypassrls;
+-- assumed, because either would disable every policy.
+alter role orbit_app nocreatedb nocreaterole noinherit;
+
+-- SUPERUSER and BYPASSRLS are different: only a superuser may alter them, even
+-- to clear them. On a managed Postgres the provisioning role is not one —
+-- Supabase's `postgres` is CREATEROLE, not SUPERUSER — so issuing these
+-- unconditionally aborts provisioning on a role that was already correct.
+-- CREATE ROLE leaves both off by default, so the normal path is a no-op; the
+-- ALTER exists only for a role that predates this file, and if it is needed and
+-- we cannot do it, that must be an error rather than a silent pass.
+do $$
+declare
+  r record;
+begin
+  select rolsuper, rolbypassrls into r from pg_roles where rolname = 'orbit_app';
+  if r.rolsuper or r.rolbypassrls then
+    alter role orbit_app nosuperuser nobypassrls;
+  end if;
+end
+$$;
 
 -- It may not create objects; it only reads and writes rows the policies allow.
 revoke create on schema public from orbit_app;
@@ -48,11 +66,17 @@ alter role orbit_app connection limit 40;
 do $$
 declare
   can_bypass boolean;
+  is_super boolean;
   owns_tables integer;
 begin
-  select rolbypassrls into can_bypass from pg_roles where rolname = 'orbit_app';
+  select rolbypassrls, rolsuper into can_bypass, is_super
+  from pg_roles where rolname = 'orbit_app';
+
   if can_bypass then
     raise exception 'orbit_app holds BYPASSRLS — every row-level policy would be inert';
+  end if;
+  if is_super then
+    raise exception 'orbit_app is a superuser — every row-level policy would be inert';
   end if;
 
   select count(*) into owns_tables

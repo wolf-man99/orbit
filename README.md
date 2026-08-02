@@ -12,11 +12,18 @@ Phases 1–14 delivered. See [`docs/`](./docs/README.md); implementation notes a
 known gaps are in [Phases 9–13](./docs/09-13-implementation.md).
 
 ```
-pnpm verify       typecheck · lint · boundaries · contrast · 231 unit tests
-pnpm test:e2e     28 critical-path tests
-pnpm db:verify    27 ledger invariants against Postgres
-pnpm db:verify-rls  proves RLS governs the runtime connection
+pnpm verify           typecheck · lint · boundaries · contrast · 231 unit tests
+pnpm test:e2e         28 critical-path tests
+pnpm db:verify        27 ledger invariants against Postgres
+pnpm db:verify-rls    proves RLS governs the runtime connection
+pnpm db:provision     schema, policies, invariants, app role — five gates, in order
+pnpm db:provision:api the same five gates over the Supabase Management API
 ```
+
+The schema, policies, ledger invariants, application role, and the `auth.users`
+bootstrap trigger are applied and verified on a live Supabase project
+(PostgreSQL 17.6) as well as local Postgres 16 — see
+[Phase 14 §11](./docs/14-deployment.md).
 
 ## Intended stack
 

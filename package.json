@@ -34,7 +34,8 @@
     "screens": "node scripts/capture-screens.mjs",
     "db:verify-rls": "node scripts/verify-rls.mjs",
     "db:release": "pnpm db:deploy && pnpm db:sql && pnpm db:verify",
-    "db:provision": "node scripts/provision.mjs"
+    "db:provision": "node scripts/provision.mjs",
+    "db:provision:api": "node scripts/provision-via-api.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",

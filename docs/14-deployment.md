@@ -180,7 +180,42 @@ Running it against an empty database found a gap that had been invisible for ele
 
 The script never writes the generated password to a file and never passes it in a `psql` argument list, where `ps` would expose it to every process on the host — it goes over stdin.
 
-## 11. Auth wiring (Q41)
+### `pnpm db:provision:api` — same gates, different transport
+
+Supabase's direct database host resolves to IPv6 only, and many sandboxes, CI runners, and corporate networks allow HTTPS egress but not raw TCP on 5432. `scripts/provision-via-api.mjs` runs the identical five gates over the Supabase Management API (`POST /v1/projects/{ref}/database/query`) instead of the Postgres wire protocol. Two differences worth knowing:
+
+- psql meta-commands (`\set`) are client directives the server rejects, so they are stripped. `ON_ERROR_STOP` is not lost — the API fails the request on any error, which is the same thing.
+- Migrations are recorded in `_prisma_migrations` with the **real sha256 of the migration file**. A placeholder checksum would make a later `prisma migrate deploy` refuse to run, claiming an applied migration had been edited.
+
+## 11. What the hosted run found (Q46)
+
+Provisioning a real Supabase project is where Q46 stopped being a caveat. Two failures surfaced that eleven phases of local Postgres could not, and both share a cause: **the local verification connects as a superuser and the hosted one does not.** Supabase's `postgres` role is `CREATEROLE`, not `SUPERUSER`.
+
+| Gate | Failure on the hosted instance | Fix |
+| --- | --- | --- |
+| 3 — ledger invariants | `permission denied to set role "orbit_app"` | The suite proves RLS by *becoming* `orbit_app`. A superuser may do that unconditionally; a managed owner may not, so the entire RLS half of the acceptance test was unrunnable. `002_rls.sql` now grants the role to the owner `with inherit false, set true` — the ability to assume it, none of its privileges. |
+| 4 — application role | `Only roles with the SUPERUSER attribute may alter roles with the SUPERUSER attribute` | `alter role orbit_app nosuperuser … nobypassrls` requires superuser *even to clear the attributes*. `CREATE ROLE` leaves both off, so the statement was a no-op that nonetheless aborted provisioning. It is now conditional on the attributes actually being set, and the verification block raises on `rolsuper` as well as `rolbypassrls` so a role that needs the repair and cannot get it still fails loudly. |
+
+This is the same lesson as the empty `migrations/` directory in §10, in a different costume: a verification that runs under more privilege than production does not verify production.
+
+### Result
+
+All five gates pass against project `uzptbzjreilmtrpxfawx` (PostgreSQL 17.6):
+
+```
+tables 19 · policies 21 · triggers 17 · indexes 85
+orbit_app:  bypasses RLS false · superuser false · can login true · owns 0 tables
+```
+
+Nineteen of nineteen `public` tables have RLS enabled. Eighteen are the schema; the nineteenth is `_prisma_migrations`, which ends up with RLS on and **no policy at all** — deny-by-default, and `orbit_app` holds no `SELECT` on it. That is the correct outcome rather than an oversight.
+
+The `auth.users` trigger branch of `004_auth_bridge.sql` **executed for the first time.** Every prior run printed *"auth.users not found — skipping"*; `on_auth_user_created` now exists on `auth.users`, so a Supabase signup calls `orbit.bootstrap_user()` and lands a portfolio.
+
+The same edits were re-verified against local Postgres 16 afterwards, including a negative control: granting `BYPASSRLS` to `orbit_app` and confirming `005` repairs it rather than reporting success. All 27 invariants still hold on both engines.
+
+**What remains unproven:** no application process has connected *as* `orbit_app` over the wire — this container has neither IPv6 egress nor raw TCP to 5432, so pgBouncer, the pooled connection string, and `SET LOCAL app.user_id` under pgBouncer are still untested against the hosted instance. RLS itself is proven, since the invariants suite evaluates the policies under that exact role.
+
+## 12. Auth wiring (Q41)
 
 Sign-in, verify, sign-out, and the payment route are bound. Session resolution lives in the composition root, since it needs both `infrastructure/auth` and `application`.
 
@@ -194,7 +229,7 @@ Sign-in, verify, sign-out, and the payment route are bound. Session resolution l
 
 **Exercising the endpoint found a bad failure mode.** With no database configured, recording a payment threw into a bare `500` with an empty body. Reads legitimately fall back to the seeded source, but a *write* has nowhere to land, and a payment the user believes was recorded and was not is the worst outcome this product can produce. It now returns `503` with an explicit sentence — *"Nothing was saved."* Constraint violations are caught and returned as `INVARIANT` sentences rather than SQLSTATEs.
 
-## 12. Remaining
+## 13. Remaining
 
 | # | Item | Note |
 | --- | --- | --- |
@@ -202,9 +237,10 @@ Sign-in, verify, sign-out, and the payment route are bound. Session resolution l
 | Q43 | Job endpoints return stubs | The engines they call are implemented and tested |
 | Q44 | No load testing against the P-06/P-07 budgets | Needs a seeded database at realistic volume |
 | Q45 | Sign-in and verify have no UI | The routes work; the screens are not built |
-| Q46 | Nothing has run against a hosted Supabase project | All database verification is against local Postgres 16. The Supabase-specific surface — hosted auth, the `auth.users` trigger, storage, pgBouncer — is written but unexercised. |
+| Q46 | ~~Nothing has run against a hosted Supabase project~~ | **Closed** — see §11. Schema, RLS, invariants, the application role, and the `auth.users` trigger are all applied and verified on a live project. |
+| Q47 | No process has connected as `orbit_app` over the wire | Opened by closing Q46. The pooled connection string and `SET LOCAL app.user_id` through pgBouncer need an environment with TCP egress to Supabase. |
 
-**Q46 is the honest limit of what has been proven.** The mechanisms are verified; the hosted instance is not, and cannot be without credentials.
+**Q47 is now the honest limit of what has been proven.** The policies are proven under the runtime role; the runtime *connection* is not.
 
 ---
 
