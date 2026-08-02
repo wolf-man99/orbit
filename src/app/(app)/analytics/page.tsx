@@ -1,11 +1,12 @@
 import { Card, Money } from '@/components'
-import { loadAnalytics } from '@/application/queries/sample-portfolio'
+import { loadAnalytics } from '@/application/queries/views'
+import { portfolioSource } from '@/composition'
 
 /** Analytics — "How is my capital performing over time?" (Phase 2 §6.6) */
-export const dynamic = 'force-static'
+export const dynamic = 'force-dynamic'
 
-export default function AnalyticsPage() {
-  const { months, collectionRateBps, topBorrowers, asOf } = loadAnalytics()
+export default async function AnalyticsPage() {
+  const { months, collectionRateBps, topBorrowers, asOf } = await loadAnalytics(portfolioSource())
   // Guard against a zero peak: an all-empty window would divide by zero.
   const peak = months.reduce<bigint>(
     (max, month) => (month.accruedMinor > max ? month.accruedMinor : max),

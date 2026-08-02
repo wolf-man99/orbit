@@ -27,7 +27,7 @@ test.describe('dashboard', () => {
     // reporting that the dashboard says those words twice.
     const health = page.locator('section', { has: page.getByRole('heading', { name: 'Portfolio health' }) })
     for (const factor of [
-      'Collection rate', 'Overdue exposure', 'Overdue borrowers', 'Concentration', 'Punctuality',
+      'Interest collected', 'Overdue exposure', 'Overdue borrowers', 'Concentration', 'Punctuality',
     ]) {
       await expect(health.getByText(factor, { exact: true })).toBeVisible()
     }
@@ -109,6 +109,16 @@ test.describe('navigation', () => {
       await page.goto(path as string)
       await expect(page.getByRole('heading', { name: heading as string, level: 1 })).toBeVisible()
     }
+  })
+})
+
+test.describe('naming (Q36)', () => {
+  test('never shows one name for two different quantities', async ({ page }) => {
+    await page.goto('/dashboard')
+    // "Collection rate" is the actual percentage and must appear exactly once.
+    // The health factor is a 0–100 score and is named separately.
+    await expect(page.getByText('Collection rate', { exact: true })).toHaveCount(1)
+    await expect(page.getByText('Interest collected', { exact: true })).toHaveCount(1)
   })
 })
 

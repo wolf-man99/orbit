@@ -2,14 +2,15 @@ import Link from 'next/link'
 import { sum } from '@/domain/money'
 import { Avatar, Card, Money, StatusPill } from '@/components'
 import { formatDueness, formatRate } from '@/lib/format'
-import { loadBorrowers } from '@/application/queries/sample-portfolio'
+import { loadBorrowers } from '@/application/queries/views'
+import { portfolioSource } from '@/composition'
 
 /** Borrowers — "Who owes me what, and who needs attention?" (Phase 2 §6.2) */
-export const dynamic = 'force-static'
+export const dynamic = 'force-dynamic'
 
-export default function BorrowersPage() {
+export default async function BorrowersPage() {
   // Sorted so those needing attention lead. (Phase 2 §6.2, Q7)
-  const { asOf: AS_OF, rows: ordered } = loadBorrowers()
+  const { asOf: AS_OF, rows: ordered } = await loadBorrowers(portfolioSource())
   const outstanding = sum(ordered.map((b) => b.outstandingPrincipal))
 
   return (

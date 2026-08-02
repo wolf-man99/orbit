@@ -82,7 +82,11 @@ export function portfolioHealth(input: HealthInput): Composite {
   const factors: Factor[] = [
     {
       key: 'collection',
-      label: 'Collection rate',
+      // Deliberately NOT "Collection rate": that name belongs to the actual
+      // percentage shown elsewhere on the dashboard. Here it is a 0–100 factor
+      // score, and two different quantities under one name is exactly the
+      // ambiguity a financial interface cannot afford. (Q36)
+      label: 'Interest collected',
       weight: 30,
       score: clamp(input.collectionRateBps / 100),
       detail: `${(input.collectionRateBps / 100).toFixed(0)}% of interest due was received`,

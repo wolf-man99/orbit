@@ -2,13 +2,14 @@ import { ArrowDownLeft, ArrowUpRight } from 'lucide-react'
 import { negate, subtract } from '@/domain/money'
 import { Avatar, Card, Money } from '@/components'
 import { formatDate } from '@/lib/format'
-import { isInflow, ledgerTypeLabel, loadTransactions } from '@/application/queries/sample-portfolio'
+import { isInflow, ledgerTypeLabel, loadTransactions } from '@/application/queries/views'
+import { portfolioSource } from '@/composition'
 
 /** Transactions — "What has moved?" (Phase 2 §6.5) */
-export const dynamic = 'force-static'
+export const dynamic = 'force-dynamic'
 
-export default function TransactionsPage() {
-  const { asOf, entries, inflow, outflow } = loadTransactions()
+export default async function TransactionsPage() {
+  const { asOf, entries, inflow, outflow } = await loadTransactions(portfolioSource())
 
   // Grouped by day with sticky headers, newest first. (Phase 2 §6.5)
   const days = entries.reduce<Map<string, typeof entries>>((groups, entry) => {

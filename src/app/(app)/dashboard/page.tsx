@@ -2,7 +2,8 @@ import { HeroValue } from '@/components'
 import {
   ActivityTier, AttentionTier, CharacterTier, HealthTier, PositionTier,
 } from '@/features/dashboard/components/tiers'
-import { loadDashboard } from '@/application/queries/sample-portfolio'
+import { loadDashboard } from '@/application/queries/views'
+import { portfolioSource } from '@/composition'
 
 /**
  * Dashboard — "Is my capital healthy today?" (Phase 2 §6.1)
@@ -10,10 +11,10 @@ import { loadDashboard } from '@/application/queries/sample-portfolio'
  * Reads from the engine-computed fixture while the data layer is wired in
  * Phase 10; every figure shown is the accrual engine's real output.
  */
-export const dynamic = 'force-static'
+export const dynamic = 'force-dynamic'
 
-export default function DashboardPage() {
-  const { asOf: AS_OF, portfolio, collections, activity } = loadDashboard()
+export default async function DashboardPage() {
+  const { asOf: AS_OF, portfolio, collections, activity } = await loadDashboard(portfolioSource())
 
   return (
     <>

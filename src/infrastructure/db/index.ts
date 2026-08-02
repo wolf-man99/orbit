@@ -7,4 +7,6 @@
  */
 export type { TenantDb, WithTenantOptions } from './tenant'
 export { withTenant } from './tenant'
+export type { TenantContext } from './portfolio-source'
+export { databaseSource } from './portfolio-source'
 export * from './repositories'

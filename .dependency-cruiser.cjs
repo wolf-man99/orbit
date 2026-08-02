@@ -88,6 +88,18 @@ module.exports = {
         pathNot: '^src/infrastructure/observability/',
       },
     },
+    {
+      name: 'composition-root-is-the-only-wiring-point',
+      severity: 'error',
+      comment:
+        'src/composition is the ONE module permitted to see both application ' +
+        'and infrastructure, because something must choose which adapter ' +
+        'satisfies a port. Nothing else may import it except presentation, and ' +
+        'it may not be imported by application or domain — otherwise the ' +
+        'dependency rule inverts through the back door.',
+      from: { path: '^src/(domain|application|infrastructure)/' },
+      to: { path: '^src/composition/' },
+    },
 
     // -----------------------------------------------------------------------
     // Tenancy

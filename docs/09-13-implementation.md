@@ -9,7 +9,7 @@
 | Version | 1.0 |
 | Status | Delivered |
 | Depends on | Phases 1–8 |
-| Verified | 177 unit tests · 26 E2E across mobile and desktop · engine ≥95% branches · boundaries, lint, contrast, build all clean |
+| Verified | 209 unit tests · 28 E2E across mobile and desktop · engine ≥95% branches · boundaries, lint, contrast, build all clean |
 
 ---
 
@@ -18,11 +18,11 @@
 ```
 ✓ pnpm typecheck        strict + 4 additional flags
 ✓ pnpm lint             clean
-✓ pnpm boundaries       93 modules, 0 violations
+✓ pnpm boundaries       103 modules, 0 violations
 ✓ pnpm check:contrast   66/66 WCAG 2.2 AA pairings
-✓ pnpm test             177/177
+✓ pnpm test             209/209
 ✓ pnpm test:coverage    engine 100% stmts/fns/lines, 95.23% branches (gate 95%)
-✓ pnpm test:e2e         26 passed, 0 skipped
+✓ pnpm test:e2e         28 passed, 0 skipped
 ✓ pnpm build            102 kB shared First Load JS (budget 180 kB)
 ```
 
@@ -155,13 +155,46 @@ Typecheck, lint, boundaries, and 151 tests were all green on a build containing:
 | **Q33** | Transactions, analytics, notifications, settings screens unbuilt | All four built and covered by E2E |
 | **Q34** | Offline queue, service worker, push undelivered | Queue, service worker, manifest, and push handling delivered. See §7.4. |
 
-### 7.2 Remaining
+### 7.2 Also closed
+
+| # | Gap | Resolution |
+| --- | --- | --- |
+| **Q35** | Loaders returned seeded data | Read models now consume a `PortfolioSource` **port**. Two peers satisfy it — `seededSource` and `databaseSource` — and a screen cannot tell them apart. See §7.5. |
+| **Q36** | "Collection rate" named two different quantities | The health factor is renamed **Interest collected**; "Collection rate" now refers only to the actual percentage. An E2E test asserts each name appears exactly once. |
+| **Q37** | Auth, document upload, and report generation unimplemented | Contracts, the auth adapter, and CSV report generation delivered. See §7.6. |
+
+### 7.5 The composition root
+
+`application` may not import `infrastructure`, and neither may a route. Something still has to decide which adapter satisfies a port, so `src/composition` exists as a named architectural concept — **the one module permitted to see both layers** — with a dependency-cruiser rule that forbids `domain`, `application`, and `infrastructure` from importing it. The exemption is one auditable file rather than a convention that erodes. The rule was verified to fire before being relied on.
+
+It also caught a genuine inversion during this work: `infrastructure/auth` imported `RequestContext` from `composition`. The type moved to `application/queries/ports`, where infrastructure can depend on it without the dependency rule bending backwards.
+
+**Two bugs surfaced when the database path was first built:**
+
+| Bug | Consequence |
+| --- | --- |
+| Prisma 7 requires an explicit driver adapter; `new PrismaClient()` alone throws | The build failed outright |
+| The client was constructed at **module scope** | Merely *importing* the DB source opened a connection, so a build or demo deploy with no `DATABASE_URL` crashed during page-data collection — even though the composition root would never have selected it. Construction is now lazy: an adapter must not have side effects at import time. |
+
+Without a database configured the seeded source serves instead. Failing to boot would make the product unreviewable; silently serving an empty portfolio would be worse, because it would look like data loss.
+
+### 7.6 Auth, documents, reports
+
+| Decision | Reasoning |
+| --- | --- |
+| The OTP is a **string**, not a number | Leading zeros are significant and a numeric type drops them silently |
+| Uploads are two-step: signed URL, then confirm | The file never passes through the application server, keeping a 10 MB upload off the request path and the bucket private (SEC-04) |
+| MIME types are an allow-list | An executable renamed `.pdf` is rejected at the contract, not at the storage layer |
+| CSV fields beginning `=`, `+`, `-`, or `@` are prefixed with a quote | Spreadsheet software treats those as **formulas**. A financial export is precisely the file a user opens without thinking, so an unescaped borrower note is a code-execution path |
+| CSV exports the exact decimal, never a grouped display figure | A spreadsheet must receive a number it can compute with |
+
+### 7.7 Still open
 
 | # | Gap | Note |
 | --- | --- | --- |
-| Q35 | `loadDashboard` and siblings still return seeded data | Signatures are already correct; the bodies swap to `withTenant` reads without touching a route |
-| Q36 | "Collection rate" appears twice on the dashboard — as a health factor score and as the rate itself | Found by an E2E strict-mode locator failure. Rename one, or drop it from the character tier |
-| Q37 | Auth, document upload, and report generation are designed but unimplemented | Phase 14 scope |
+| Q38 | `databaseSource.loans()` returns an empty `principalEvents` array | The repository query for principal-affecting events exists (`loanRepo.accrualInputs`) but is not yet joined into the source. Against a real database the engine would see no principal. Must close before any deploy carrying real data. |
+| Q39 | Auth adapter is an interface with no Supabase implementation bound | Route wiring and middleware are Phase 14 scope |
+| Q40 | PDF and XLSX report formats are contracted but only CSV is implemented | Phase 14 scope |
 
 ### 7.3 Why the health model changed
 
@@ -197,7 +230,7 @@ This was invisible while the data was hand-written and obvious within seconds of
 | Unit — reminders & analytics | 32 tests including idempotent dedupe keys and a punitive-vocabulary assertion |
 | Unit — schemas & HTTP | 27 tests: floats rejected as money, replay mapped to 200, no PII in error bodies, constant-time secret comparison |
 | Unit — offline queue | 8 tests over the classification table: what is dropped, retried, and parked |
-| E2E | 26 across mobile and desktop |
+| E2E | 28 across mobile and desktop |
 | Database | 27 SQL invariants against real Postgres 16 (Phase 3) |
 
 E2E asserts the product's **promises**, not its markup: Indian money grouping, no score without its reasons, every factor score an integer, every figure dated, status carried by a word rather than a hue, and no punitive vocabulary on any screen.

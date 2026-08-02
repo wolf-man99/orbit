@@ -1,14 +1,11 @@
 import { notFound } from 'next/navigation'
 import { Avatar, Badge, Card, Money, StatusPill } from '@/components'
 import { formatDate, formatDueness, formatRate } from '@/lib/format'
-import { loadBorrower, loadBorrowers } from '@/application/queries/sample-portfolio'
+import { loadBorrower } from '@/application/queries/views'
+import { portfolioSource } from '@/composition'
 
 /** Borrower profile — "What is my complete history with this person?" */
-export const dynamic = 'force-static'
-
-export function generateStaticParams() {
-  return loadBorrowers().rows.map((b) => ({ borrowerId: b.id }))
-}
+export const dynamic = 'force-dynamic'
 
 export default async function BorrowerPage({
   params,
@@ -16,8 +13,7 @@ export default async function BorrowerPage({
   readonly params: Promise<{ readonly borrowerId: string }>
 }) {
   const { borrowerId } = await params
-  const AS_OF = loadBorrowers().asOf
-  const borrower = loadBorrower(borrowerId)
+  const { asOf: AS_OF, borrower } = await loadBorrower(portfolioSource(), borrowerId)
   if (!borrower) notFound()
 
   return (

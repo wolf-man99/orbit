@@ -9,7 +9,7 @@
  * into another user's query across a shared pgBouncer connection.
  */
 import type { Prisma } from '@prisma/client'
-import { prisma } from './client'
+import { getPrisma } from './client'
 
 declare const tenantBrand: unique symbol
 
@@ -42,7 +42,7 @@ export async function withTenant<T>(
   fn: (db: TenantDb) => Promise<T>,
   opts: WithTenantOptions = {},
 ): Promise<T> {
-  return prisma.$transaction(
+  return getPrisma().$transaction(
     async (tx) => {
       // Parameterised: a user id is untrusted input even when it comes from a
       // verified session, and string interpolation here would be injectable.
