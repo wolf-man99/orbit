@@ -8,13 +8,14 @@ Orbit is built on an append-only ledger with a separate accrual engine, so it an
 
 ## Status
 
-Phases 1–13 delivered. See [`docs/`](./docs/README.md); implementation notes and
+Phases 1–14 delivered. See [`docs/`](./docs/README.md); implementation notes and
 known gaps are in [Phases 9–13](./docs/09-13-implementation.md).
 
 ```
-pnpm verify     typecheck · lint · boundaries · contrast · 209 unit tests
-pnpm test:e2e   28 critical-path tests
-pnpm db:verify  27 ledger invariants against Postgres
+pnpm verify       typecheck · lint · boundaries · contrast · 231 unit tests
+pnpm test:e2e     28 critical-path tests
+pnpm db:verify    27 ledger invariants against Postgres
+pnpm db:verify-rls  proves RLS governs the runtime connection
 ```
 
 ## Intended stack

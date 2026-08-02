@@ -1,0 +1,35 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": ["bom1"],
+  "framework": "nextjs",
+  "crons": [
+    { "path": "/api/jobs/accrual", "schedule": "45 18 * * *" },
+    { "path": "/api/jobs/reminders", "schedule": "30 0 * * *" },
+    { "path": "/api/jobs/snapshots", "schedule": "0 * * * *" },
+    { "path": "/api/jobs/risk", "schedule": "30 20 * * *" },
+    { "path": "/api/jobs/prune", "schedule": "0 21 * * 0" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Strict-Transport-Security", "value": "max-age=63072000; includeSubDomains; preload" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Permissions-Policy", "value": "camera=(self), microphone=(), geolocation=()" }
+      ]
+    },
+    {
+      "source": "/sw.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" },
+        { "key": "Service-Worker-Allowed", "value": "/" }
+      ]
+    },
+    {
+      "source": "/api/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
+    }
+  ]
+}

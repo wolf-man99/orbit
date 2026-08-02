@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { minor } from '@/domain/money'
 import { plainDate } from '@/domain/time'
-import { csvField, summarise, toCsv, type ReportMeta, type ReportRow } from '@/application/services/reports'
+import {
+  csvField, summarise, toCsv, toPdf, toSpreadsheetXml,
+  type ReportMeta, type ReportRow,
+} from '@/application/services/reports'
 import { confirmUploadSchema, generateReportSchema, requestUploadSchema, verifyOtpSchema } from '@/application/schemas'
 
 const meta: ReportMeta = {
@@ -100,5 +103,64 @@ describe('document upload', () => {
   })
   it('requires an idempotency key on confirmation', () => {
     expect(confirmUploadSchema.safeParse({ storagePath: 'docs/a.pdf' }).success).toBe(false)
+  })
+})
+
+describe('spreadsheet export (Q40)', () => {
+  it('types amounts as numbers, not text', () => {
+    const xml = toSpreadsheetXml(rows, meta)
+    expect(xml).toContain('<Data ss:Type="Number">10000.00</Data>')
+  })
+
+  it('escapes XML rather than corrupting the file', () => {
+    const xml = toSpreadsheetXml(
+      [{ ...rows[0]!, borrower: 'A & B <Ltd>' }], meta,
+    )
+    expect(xml).toContain('A &amp; B &lt;Ltd&gt;')
+    expect(xml).not.toContain('<Ltd>')
+  })
+
+  it('needs no formula escaping, because every cell declares its type', () => {
+    const xml = toSpreadsheetXml([{ ...rows[0]!, note: '=1+1' }], meta)
+    // Typed as String, so it is never reinterpreted as a formula.
+    expect(xml).toContain('<Data ss:Type="String">=1+1</Data>')
+  })
+
+  it('keeps the sheet name within Excel’s 31-character limit', () => {
+    const xml = toSpreadsheetXml(rows, { ...meta, title: 'x'.repeat(60) })
+    const name = /ss:Name="([^"]*)"/.exec(xml)?.[1] ?? ''
+    expect(name.length).toBeLessThanOrEqual(31)
+  })
+})
+
+describe('PDF export (Q40)', () => {
+  it('produces a structurally valid PDF', () => {
+    const bytes = toPdf(rows, meta)
+    const text = new TextDecoder().decode(bytes)
+    expect(text.startsWith('%PDF-1.4')).toBe(true)
+    expect(text.trimEnd().endsWith('%%EOF')).toBe(true)
+    expect(text).toContain('xref')
+    expect(text).toContain('trailer')
+  })
+
+  it('stamps the engine version in the footer', () => {
+    const text = new TextDecoder().decode(toPdf(rows, meta))
+    expect(text).toContain('accrual-1.0.0')
+  })
+
+  it('is byte-identical across runs, so two statements can be compared', () => {
+    expect(toPdf(rows, meta)).toEqual(toPdf(rows, meta))
+  })
+
+  it('escapes parentheses, which would otherwise terminate a PDF string', () => {
+    const text = new TextDecoder().decode(
+      toPdf([{ ...rows[0]!, borrower: 'Sharma (HUF)' }], meta),
+    )
+    expect(text).toContain('Sharma \\(HUF\\)')
+  })
+
+  it('survives an empty report', () => {
+    const text = new TextDecoder().decode(toPdf([], meta))
+    expect(text.startsWith('%PDF-1.4')).toBe(true)
   })
 })

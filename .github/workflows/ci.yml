@@ -59,6 +59,17 @@ jobs:
       - run: pnpm db:deploy
       - run: pnpm db:sql
       - run: pnpm db:verify
+      # RLS is only real if the RUNTIME connection is subject to it. That
+      # cannot be verified by reading the schema — only by connecting as the
+      # application does. A correct-looking policy set attached to an exempt
+      # connection is the most dangerous failure mode in this system.
+      - name: Provision the application role
+        run: |
+          psql "$DIRECT_URL" -v ON_ERROR_STOP=1 -v password="'ci-only-password'"             -f prisma/sql/005_app_role.sql
+      - name: Verify RLS applies to the runtime connection
+        env:
+          DATABASE_URL: postgresql://orbit_app:ci-only-password@localhost:5432/orbit
+        run: pnpm db:verify-rls
 
   e2e:
     name: E2E critical paths

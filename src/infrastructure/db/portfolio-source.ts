@@ -40,6 +40,26 @@ export function databaseSource(context: TenantContext): PortfolioSource {
           accrualRepo.unsettled(db, context),
         ])
 
+        // Q38: without these the engine sees no principal and every loan
+        // accrues zero. Batched into one query rather than N inside the
+        // transaction.
+        const principalRows = await loanRepo.principalEventsFor(
+          db,
+          context,
+          loans.map((loan) => loan.id),
+        )
+        const principalByLoan = new Map<string, { occurredOn: PlainDate; principalDelta: Minor }[]>()
+        for (const row of principalRows) {
+          if (!row.loanId) continue
+          const list = principalByLoan.get(row.loanId) ?? []
+          list.push({
+            // occurredAt, never recordedAt: accrual uses when the money moved.
+            occurredOn: toPlainDate(row.occurredAt, context.timeZone),
+            principalDelta: minor(row.principalDeltaMinor),
+          })
+          principalByLoan.set(row.loanId, list)
+        }
+
         const settledByLoan = new Map<string, Map<number, Minor>>()
         for (const period of periods) {
           const forLoan = settledByLoan.get(period.loanId) ?? new Map<number, Minor>()
@@ -65,7 +85,7 @@ export function databaseSource(context: TenantContext): PortfolioSource {
               graceDays: term.graceDays,
               anchorDay: term.anchorDay,
             })),
-            principalEvents: [],
+            principalEvents: principalByLoan.get(loan.id) ?? [],
             settledByCycle: settledByLoan.get(loan.id) ?? new Map(),
           }),
         )

@@ -94,6 +94,30 @@ export const loanRepo = {
       include: { borrower: true, balance: true, terms: { orderBy: { effectiveFrom: 'asc' } } },
     })
   },
+
+  /**
+   * Principal-affecting events for a set of loans, in one query.
+   *
+   * The engine cannot compute anything without these: an accrual basis IS the
+   * principal timeline. Fetching them per loan would issue N queries inside the
+   * tenant transaction, so they are batched and grouped in memory.
+   *
+   * REVERSAL and ADJUSTMENT are included because both carry a signed
+   * principalDelta — a reversed disbursement must remove its principal from the
+   * basis, or the engine keeps accruing on money that was never lent.
+   */
+  async principalEventsFor(db: TenantDb, tenant: Tenant, loanIds: readonly string[]) {
+    if (loanIds.length === 0) return []
+    return db.ledgerEvent.findMany({
+      where: {
+        userId: tenant.userId,
+        loanId: { in: [...loanIds] },
+        principalDeltaMinor: { not: 0n },
+      },
+      orderBy: [{ occurredAt: 'asc' }, { seq: 'asc' }],
+      select: { loanId: true, occurredAt: true, principalDeltaMinor: true },
+    })
+  },
 }
 
 // ---------------------------------------------------------------------------

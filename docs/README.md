@@ -17,4 +17,4 @@ Phase deliverables for the Orbit Personal Capital Operating System. Each phase i
 | 11 | Analytics Engine | [09-13-implementation.md](./09-13-implementation.md) | Delivered |
 | 12 | Reminder Engine | [09-13-implementation.md](./09-13-implementation.md) | Delivered |
 | 13 | Testing | [09-13-implementation.md](./09-13-implementation.md) | Delivered |
-| 14 | Deployment | — | Not started |
+| 14 | Deployment | [14-deployment.md](./14-deployment.md) | Delivered |
