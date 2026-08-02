@@ -87,9 +87,19 @@ Type error: Parameter 'period' implicitly has an 'any' type.
 
 Locally it passed for one reason only: a generated client from an earlier manual `prisma generate` was sitting in the pnpm store. **The local check was reading an artifact that CI never produces.** Removing that directory reproduces all nine errors exactly.
 
-Both `build` and `typecheck` now run `prisma generate` first, so the check and the build agree and neither depends on what happens to be left over in `node_modules`. `prisma generate` needs no database connection — verified with `DATABASE_URL`, `DIRECT_URL`, and `SHADOW_DATABASE_URL` all unset, which is the state of a Vercel build.
+**The first fix was incomplete.** Prepending `prisma generate &&` to the `build` and `typecheck` scripts in `package.json` fixed it locally and in CI — but the deployment failed again with the identical error, because `vercel.json` sets `"framework": "nextjs"` without an explicit `buildCommand`. Vercel is free to resolve its own default build step for a recognised framework rather than running the project's `build` script, and calling `next build` directly reproduces the exact same failure. Whichever command Vercel actually runs, it was not the one carrying the fix.
 
-This is the third appearance of one pattern, after the schema validated as a scratch copy in Phase 4 and the empty `migrations/` directory in §10: **a verification that reads a different artifact than production does is not a verification.** Here it was worse than useless — `skipLibCheck` converted a missing dependency into `any`, so the type system reported success precisely where it had stopped checking.
+The correct hook is **`postinstall`**, which runs unconditionally after `pnpm install` on every platform, regardless of what build command follows it — this is Prisma's own documented recommendation for Vercel:
+
+```jsonc
+"scripts": {
+  "postinstall": "prisma generate"
+}
+```
+
+Verified two ways: `pnpm install` alone regenerates the client with no other script involved, and calling bare `npx next build` immediately afterward — the same command that failed twice — now compiles clean. `prisma generate` needs no database connection either way; verified with `DATABASE_URL`, `DIRECT_URL`, and `SHADOW_DATABASE_URL` all unset.
+
+This is the third appearance of one pattern, after the schema validated as a scratch copy in Phase 4 and the empty `migrations/` directory in §10: **a verification that reads a different artifact than production does is not a verification.** Here it was worse than useless twice over — first `skipLibCheck` converted a missing dependency into `any` so the type system reported success precisely where it had stopped checking; then a fix verified against the *wrong command* reported success while the actual deploy path was untouched.
 
 ---
 
