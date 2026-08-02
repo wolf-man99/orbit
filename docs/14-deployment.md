@@ -94,11 +94,13 @@ Vercel evaluates cron in UTC. Every schedule in `vercel.json` is written by conv
 | --- | --- | --- |
 | 00:15 daily | `45 18 * * *` — previous day | accrual materialisation |
 | 06:00 daily | `30 0 * * *` | reminder generation |
-| hourly | `0 * * * *` | snapshot roll-up |
+| 00:30 daily | `0 19 * * *` — previous day | snapshot roll-up |
 | 02:00 daily | `30 20 * * *` — previous day | risk recompute |
 | Mon 02:30 | `0 21 * * 0` — Sunday | retention prune |
 
 This is the same trap as the `date_trunc` index in Phase 3 and the month bucketing in Phase 11: treating UTC as "the" calendar silently produces wrong answers for every user outside it. A reminder job firing at 06:00 UTC reaches an Indian user at 11:30, after they have already wondered why nothing arrived.
+
+**Snapshot roll-up was originally hourly.** Vercel's Hobby plan rejects any cron expression that fires more than once a day, which surfaces only at deploy time, not locally. It now runs once daily, 15 minutes after `accrual` completes, so the day's snapshot reflects that day's posted interest rather than racing it. The tradeoff is coarser trend granularity — once a day instead of every hour — reversible by upgrading to Pro and restoring `0 * * * *` if intra-day granularity is ever needed.
 
 ---
 

@@ -5,7 +5,7 @@
   "crons": [
     { "path": "/api/jobs/accrual", "schedule": "45 18 * * *" },
     { "path": "/api/jobs/reminders", "schedule": "30 0 * * *" },
-    { "path": "/api/jobs/snapshots", "schedule": "0 * * * *" },
+    { "path": "/api/jobs/snapshots", "schedule": "0 19 * * *" },
     { "path": "/api/jobs/risk", "schedule": "30 20 * * *" },
     { "path": "/api/jobs/prune", "schedule": "0 21 * * 0" }
   ],
