@@ -291,9 +291,24 @@ Sign-in, verify, sign-out, and the payment route are bound. Session resolution l
 | Q45 | Sign-in and verify have no UI | The routes work; the screens are not built |
 | Q46 | ~~Nothing has run against a hosted Supabase project~~ | **Closed** — see §11. Schema, RLS, invariants, the application role, and the `auth.users` trigger are all applied and verified on a live project. |
 | Q47 | No process has connected as `orbit_app` over the wire | Opened by closing Q46. The pooled connection string and `SET LOCAL app.user_id` through pgBouncer need an environment with TCP egress to Supabase. |
+| Q48 | Initial JS is 231 kB brotli against a 180 kB budget (PRD P-05) | Discovered running `pnpm size`, which is not part of `pnpm verify` and so was never gated. Already 218 kB before this phase's fixes; each of those added roughly 13 kB (Radix Dialog, the record-payment form, the reports form). Not investigated further here — it does not block a build or a deploy, only the budget script, and fixing it is a separate piece of work from the two bugs this phase closed. |
 
-**Q47 is now the honest limit of what has been proven.** The policies are proven under the runtime role; the runtime *connection* is not.
+**Q48 is the next honest gap.** `pnpm size` needs to run somewhere it is actually seen — folded into `pnpm verify` or CI — or a budget nobody looks at is not a budget.
 
----
+## 14. Two features that shipped as dead ends
+
+Both were reported after the first successful deploy: `/reports` returned `404`, and the "Record payment" button — the FAB on mobile, the sidebar button on desktop — did nothing at all.
+
+**`/reports` had no page.** `src/app/(app)/reports/` existed as an empty directory; the sidebar linked to it, nothing answered. Added `src/app/(app)/reports/page.tsx`, a form for kind (portfolio / cash flow / borrower), date range, and format (CSV / spreadsheet / PDF), and `POST /api/v1/reports`, which loads the ledger through the existing `PortfolioSource`, filters it, and calls the report functions from Phase 11 (`toCsv`, `toSpreadsheetXml`, `toPdf`) that had been written, tested, and never called from anywhere. Phase 6 specced this as an async job with polling (`POST /reports` then `GET /reports/:id`); that is worth building once a report is slow enough to need it; today the whole pipeline is a pure, synchronous function under 200 rows, so the endpoint returns the file directly rather than fake-polling a job queue that does not exist.
+
+**"Record payment" had no dialog to open.** `src/features/transactions/components/` held only a `.gitkeep`. Both button components already accepted an `onAction` prop for exactly this, but `(app)/layout.tsx` rendered `<Sidebar />` and `<BottomNav />` with no props at all — the click handler was `undefined`, so a click did precisely nothing. This is why it looked "unresponsive" rather than broken: there was no error to see, because there was nothing behind the button to fail.
+
+Built `RecordPaymentDialog` (loan picker, date, interest and principal amounts, an optional note) and `Dialog`/`Field` primitives in `components/ui` on top of `@radix-ui/react-dialog`, which had been a dependency since Phase 5 and never imported. `(app)/layout.tsx` now loads the open-loan list once, server-side, and a new client component, `AppChrome`, owns the one bit of state — whether the sheet is open — that the FAB and the sidebar button, sitting in different branches of the tree, need to share.
+
+**What this does and does not fix.** The dialog now genuinely submits to `POST /api/v1/transactions`. What happens next depends on environment, and both paths were verified rather than assumed:
+- No `DATABASE_URL` configured (this deployment's actual current state): the request reaches the route, which returns `503` with *"This deployment has no database configured, so payments cannot be recorded. Nothing was saved."* — the dialog shows that sentence inline. Correct and honest, not a fix for the missing database.
+- `DATABASE_URL` configured: the payment records for real.
+
+Recording a payment now requires the app to actually reach the database — which is exactly Q47, above. Nothing here closes that; it only means the button is finally connected to the wall it was always going to hit.
 
 *End of Phase 14.*
