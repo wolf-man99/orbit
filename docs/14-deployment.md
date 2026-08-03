@@ -204,6 +204,7 @@ Redaction happens at the logger, not the call site. Relying on every caller to r
 - [ ] PITR enabled; a restore has been performed at least once
 
 **After**
+- [ ] `/` redirects to `/dashboard` and returns `200` — there is no content at the root path itself; see the note below
 - [ ] `/dashboard` renders with real data and a dated `as of`
 - [ ] Record a payment; confirm one round trip returns balance and resolved reminders
 - [ ] Replay the same idempotency key; confirm `200` and **no second event**
@@ -212,6 +213,14 @@ Redaction happens at the logger, not the call site. Relying on every caller to r
 - [ ] Logs contain identifiers and no names, amounts, or notes
 
 **Rollback:** revert the Vercel deployment. Schema migrations are forward-only; the ledger is append-only, so no data is lost by rolling the application back to a prior build.
+
+### The root path had no page
+
+Every screen lives under a route group — `(app)/dashboard`, `(app)/analytics`, and so on — and none of those groups produce a route at `/` itself; route groups exist precisely so their folder name is not part of the URL. Nothing filled the gap, so the first production deployment served the framework's default `404` at the exact URL a visitor opens first. Every other route worked; only the root was missing, which is why it surfaced after `build` was already fixed and passing.
+
+`src/app/page.tsx` now redirects `/` to `/dashboard`. It is a redirect rather than a rendered page because sign-in has no screen yet (Q45) — this matches the fallback the rest of the app already uses, where an unauthenticated read resolves against the demo identity rather than gating on a login the UI cannot yet present. Once Q45 closes, this is the file that should start branching on session state.
+
+Verified against a production server (`next build` + `next start`), not just the build log: `GET /` returns `307` to `/dashboard`, and following the redirect returns `200`.
 
 ---
 
